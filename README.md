@@ -1,0 +1,30 @@
+# Robotics AI Playbook
+
+A growing knowledge base on ROS2, robotics, and AI — notes, guides, and code examples from my work in robotics engineering.
+
+## What's here
+
+| Section | Topics |
+|---|---|
+| [ROS2](./ros2/) | Nodes, topics, services, actions, TF2, URDF, DDS, debugging |
+| [Navigation](./navigation/) | Nav2, SLAM, AMCL, costmaps, planners, LiDAR |
+| [Manipulation](./manipulation/) | MoveIt2, kinematics, ros2_control, pick & place |
+| [AI + Robotics](./ai-robotics/) | LLMs for robots, computer vision, YOLO, RL, foundation models |
+| [Software](./software/) | Testing, Docker, CI/CD, debugging, performance |
+| [Papers](./papers/) | Research paper digests |
+| [Weekly](./weekly/) | Field updates and synthesis |
+
+## Progress
+
+<!-- PROGRESS -->
+Articles written: 1 | Queue: 51
+<!-- /PROGRESS -->
+
+---
+*Updated regularly · Started 2026-05-23*
+
+## Articles
+
+### Ros2
+
+- [ROS2 Architecture Overview](./ros2/ros2-architecture-overview.md)
