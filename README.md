@@ -17,7 +17,7 @@ A growing knowledge base on ROS2, robotics, and AI — notes, guides, and code e
 ## Progress
 
 <!-- PROGRESS -->
-Articles written: 1 | Queue: 51
+Articles written: 2 | Queue: 54
 <!-- /PROGRESS -->
 
 ---
@@ -28,3 +28,4 @@ Articles written: 1 | Queue: 51
 ### Ros2
 
 - [ROS2 Architecture Overview](./ros2/ros2-architecture-overview.md)
+- [ROS2 Nodes — Creating and Managing](./ros2/ros2-nodes.md)

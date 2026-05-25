@@ -1,13 +1,7 @@
 {
   "created": "2026-05-23T13:47:19.804778+05:30",
-  "articles_written": 1,
+  "articles_written": 2,
   "queue": [
-    {
-      "topic": "ROS2 Nodes \u2014 Creating and Managing",
-      "category": "ros2",
-      "slug": "ros2-nodes",
-      "priority": 1
-    },
     {
       "topic": "ROS2 Topics \u2014 Publishers and Subscribers",
       "category": "ros2",
@@ -307,6 +301,30 @@
       "category": "software",
       "slug": "ros2-security",
       "priority": 3
+    },
+    {
+      "topic": "Zenoh Middleware in ROS2 \u2014 Beyond DDS",
+      "category": "ros2",
+      "slug": "zenoh-middleware-in-ros2-beyond-dds",
+      "priority": 2
+    },
+    {
+      "topic": "LeRobot \u2014 End-to-End Robot Learning with HuggingFace",
+      "category": "ai-robotics",
+      "slug": "lerobot-end-to-end-robot-learning-with-huggingface",
+      "priority": 2
+    },
+    {
+      "topic": "Vision-Language-Action Models \u2014 PI0, GR00T, OpenVLA",
+      "category": "ai-robotics",
+      "slug": "vision-language-action-models-pi0-gr00t-openvla",
+      "priority": 2
+    },
+    {
+      "topic": "World Models for Robot Planning \u2014 NVIDIA Cosmos and Beyond",
+      "category": "papers",
+      "slug": "world-models-for-robot-planning-nvidia-cosmos-and-beyond",
+      "priority": 2
     }
   ],
   "done": [
@@ -316,10 +334,17 @@
       "slug": "ros2-architecture-overview",
       "priority": 1,
       "written": "2026-05-23T14:02:13.304769+05:30"
+    },
+    {
+      "topic": "ROS2 Nodes \u2014 Creating and Managing",
+      "category": "ros2",
+      "slug": "ros2-nodes",
+      "priority": 1,
+      "written": "2026-05-25T10:01:47.810441+05:30"
     }
   ],
   "flagged": [],
   "last_discovery": null,
   "last_audit": null,
-  "last_written": "2026-05-23T14:02:13.304793+05:30"
+  "last_written": "2026-05-25T10:01:47.810465+05:30"
 }
