@@ -1,13 +1,7 @@
 {
   "created": "2026-05-23T13:47:19.804778+05:30",
-  "articles_written": 2,
+  "articles_written": 3,
   "queue": [
-    {
-      "topic": "ROS2 Topics \u2014 Publishers and Subscribers",
-      "category": "ros2",
-      "slug": "ros2-topics",
-      "priority": 1
-    },
     {
       "topic": "ROS2 Services \u2014 Request and Response",
       "category": "ros2",
@@ -341,10 +335,17 @@
       "slug": "ros2-nodes",
       "priority": 1,
       "written": "2026-05-25T10:01:47.810441+05:30"
+    },
+    {
+      "topic": "ROS2 Topics \u2014 Publishers and Subscribers",
+      "category": "ros2",
+      "slug": "ros2-topics",
+      "priority": 1,
+      "written": "2026-05-26T10:02:05.863160+05:30"
     }
   ],
   "flagged": [],
   "last_discovery": null,
   "last_audit": null,
-  "last_written": "2026-05-25T10:01:47.810465+05:30"
+  "last_written": "2026-05-26T10:02:05.863186+05:30"
 }
