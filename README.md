@@ -17,7 +17,7 @@ A growing knowledge base on ROS2, robotics, and AI — notes, guides, and code e
 ## Progress
 
 <!-- PROGRESS -->
-Articles written: 3 | Queue: 53
+Articles written: 8 | Queue: 52
 <!-- /PROGRESS -->
 
 ---
@@ -27,6 +27,11 @@ Articles written: 3 | Queue: 53
 
 ### Ros2
 
+- [ROS2 Actions — Long Running Tasks](./ros2/ros2-actions.md)
 - [ROS2 Architecture Overview](./ros2/ros2-architecture-overview.md)
+- [ROS2 Launch Files — Orchestrating Systems](./ros2/ros2-launch-files.md)
 - [ROS2 Nodes — Creating and Managing](./ros2/ros2-nodes.md)
+- [ROS2 Parameters — Configuration at Runtime](./ros2/ros2-parameters.md)
+- [ROS2 Services — Request and Response](./ros2/ros2-services.md)
+- [ROS2 TF2 — Coordinate Transformations](./ros2/ros2-tf2.md)
 - [ROS2 Topics — Publishers and Subscribers](./ros2/ros2-topics.md)
