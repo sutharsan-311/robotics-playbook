@@ -17,7 +17,7 @@ A growing knowledge base on ROS2, robotics, and AI — notes, guides, and code e
 ## Progress
 
 <!-- PROGRESS -->
-Articles written: 8 | Queue: 52
+Articles written: 10 | Queue: 50
 <!-- /PROGRESS -->
 
 ---
@@ -32,6 +32,8 @@ Articles written: 8 | Queue: 52
 - [ROS2 Launch Files — Orchestrating Systems](./ros2/ros2-launch-files.md)
 - [ROS2 Nodes — Creating and Managing](./ros2/ros2-nodes.md)
 - [ROS2 Parameters — Configuration at Runtime](./ros2/ros2-parameters.md)
+- [ROS2 QoS — Quality of Service Policies](./ros2/ros2-qos.md)
 - [ROS2 Services — Request and Response](./ros2/ros2-services.md)
 - [ROS2 TF2 — Coordinate Transformations](./ros2/ros2-tf2.md)
 - [ROS2 Topics — Publishers and Subscribers](./ros2/ros2-topics.md)
+- [ROS2 URDF — Robot Description Format](./ros2/ros2-urdf.md)

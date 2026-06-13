@@ -1,19 +1,7 @@
 {
   "created": "2026-05-23T13:47:19.804778+05:30",
-  "articles_written": 8,
+  "articles_written": 10,
   "queue": [
-    {
-      "topic": "ROS2 URDF \u2014 Robot Description Format",
-      "category": "ros2",
-      "slug": "ros2-urdf",
-      "priority": 1
-    },
-    {
-      "topic": "ROS2 QoS \u2014 Quality of Service Policies",
-      "category": "ros2",
-      "slug": "ros2-qos",
-      "priority": 1
-    },
     {
       "topic": "ROS2 Bag Files \u2014 Recording and Playback",
       "category": "ros2",
@@ -371,12 +359,27 @@
       "slug": "ros2-tf2",
       "priority": 1,
       "written": "2026-06-02T10:01:36.646040+05:30"
+    },
+    {
+      "topic": "ROS2 URDF \u2014 Robot Description Format",
+      "category": "ros2",
+      "slug": "ros2-urdf",
+      "priority": 1,
+      "written": "2026-06-08T10:01:59.483819+05:30"
+    },
+    {
+      "topic": "ROS2 QoS \u2014 Quality of Service Policies",
+      "category": "ros2",
+      "slug": "ros2-qos",
+      "priority": 1,
+      "written": "2026-06-10T10:01:39.199999+05:30"
     }
   ],
   "flagged": [
-    "ros2-nodes"
+    "ros2-nodes",
+    "ros2-tf2"
   ],
   "last_discovery": null,
   "last_audit": null,
-  "last_written": "2026-06-02T10:01:36.646062+05:30"
+  "last_written": "2026-06-10T10:01:39.200072+05:30"
 }
