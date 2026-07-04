@@ -245,13 +245,20 @@ ros2 param get /robot_state_publisher robot_description | head -5
 
 ## ros2_control tags
 
-If your robot uses `ros2_control` (hardware interfaces, controllers), the URDF is also where you declare the hardware plugin and joint interfaces. The following snippet wires a simulated system to `gazebo_ros2_control`:
+If your robot uses `ros2_control` (hardware interfaces, controllers), the URDF is also where you declare the hardware plugin and joint interfaces.
+
+> **Gazebo Classic vs Gazebo (gz):** ROS 2 Jazzy pairs with **Gazebo Harmonic** (the `gz` family — package prefix `gz_ros2_control`). Gazebo Classic (`gazebo_ros2_control`, `libgazebo_ros2_control.so`) was never released for Jazzy/Noble. If you are on Humble and still using Gazebo Classic, replace `gz_ros2_control/GazeboSimSystem` with `gazebo_ros2_control/GazeboSystem` and the plugin filename with `libgazebo_ros2_control.so`.
+
+The following snippet wires a differential-drive robot to `gz_ros2_control` (Jazzy / Gazebo Harmonic):
 
 ```xml
-<!-- Source: control.ros.org/humble/doc/gazebo_ros2_control/doc/index.html -->
-<ros2_control name="GazeboSystem" type="system">
+<!-- Source: control.ros.org/jazzy/doc/gz_ros2_control/doc/index.html -->
+<!-- Place inside <robot> after your link/joint definitions -->
+
+<!-- 1. ros2_control hardware tag — parsed by the controller manager -->
+<ros2_control name="GazeboSimSystem" type="system">
   <hardware>
-    <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+    <plugin>gz_ros2_control/GazeboSimSystem</plugin>
   </hardware>
   <joint name="left_wheel_joint">
     <command_interface name="velocity"/>
@@ -265,13 +272,28 @@ If your robot uses `ros2_control` (hardware interfaces, controllers), the URDF i
   </joint>
 </ros2_control>
 
-<!-- Gazebo plugin that parses the ros2_control tags above -->
+<!-- 2. Gazebo (gz) plugin tag — tells gz-sim to load the controller manager -->
+<!-- $(find-pkg-share ...) is valid xacro syntax; resolves via ament_index   -->
 <gazebo>
-  <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
-    <parameters>$(find my_robot_bringup)/config/controllers.yaml</parameters>
+  <plugin filename="libgz_ros2_control-system.so"
+          name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+    <parameters>$(find-pkg-share my_robot_bringup)/config/controllers.yaml</parameters>
   </plugin>
 </gazebo>
 ```
+
+**`package.xml`** dependencies for simulation:
+```xml
+<exec_depend>gz_ros2_control</exec_depend>
+<exec_depend>ros2_controllers</exec_depend>
+```
+
+**Install** the packages on Jazzy:
+```bash
+sudo apt install ros-jazzy-gz-ros2-control ros-jazzy-ros2-controllers
+```
+
+`hold_joints` defaults to `true` inside the plugin — joints whose command interface is not claimed by any active controller are held at their current position, preventing gravity-induced drift in simulation. Set `<hold_joints>false</hold_joints>` inside the plugin tag if you want unclaimed joints to be free.
 
 `<robot_param>` defaults to `robot_description` on the `robot_state_publisher` node — no extra configuration needed if you follow the standard launch pattern.
 
@@ -311,8 +333,8 @@ The `Command(['xacro ', ...])` pattern regenerates the URDF from xacro at every 
 - [Using URDF with robot_state_publisher (Python) — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/URDF/Using-URDF-with-Robot-State-Publisher-py.html) — the canonical launch file pattern with Command substitution
 - [ros/urdf_tutorial — ros2 branch (GitHub)](https://github.com/ros/urdf_tutorial/tree/ros2) — 09 worked URDF/xacro examples referenced throughout the official docs
 - [robot_state_publisher — Jazzy package docs](https://docs.ros.org/en/jazzy/p/robot_state_publisher/) — node parameters, topic interface, and `/robot_description` topic vs parameter behaviour
-- [gazebo_ros2_control — ROS 2 Control Humble docs](https://control.ros.org/humble/doc/gazebo_ros2_control/doc/index.html) — wiring ros2_control hardware interfaces through the URDF and into Gazebo Classic
+- [gz_ros2_control — ROS 2 Control Jazzy docs](https://control.ros.org/jazzy/doc/gz_ros2_control/doc/index.html) — wiring ros2_control hardware interfaces through the URDF and into Gazebo Harmonic (GazeboSimSystem plugin, hold_joints, controller YAML loading)
 
 ---
 
-*2026-06-27 | ROS2 version: Jazzy / Humble*
+*2026-07-04 | ROS2 version: Jazzy (Gazebo Harmonic) / Humble (Gazebo Classic — deprecated)*
