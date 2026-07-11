@@ -1,19 +1,7 @@
 {
   "created": "2026-05-23T13:47:19.804778+05:30",
-  "articles_written": 10,
+  "articles_written": 12,
   "queue": [
-    {
-      "topic": "ROS2 Bag Files \u2014 Recording and Playback",
-      "category": "ros2",
-      "slug": "ros2-bag-files",
-      "priority": 2
-    },
-    {
-      "topic": "ROS2 Lifecycle Nodes",
-      "category": "ros2",
-      "slug": "ros2-lifecycle-nodes",
-      "priority": 2
-    },
     {
       "topic": "ROS2 Component Nodes \u2014 Composable Executors",
       "category": "ros2",
@@ -301,6 +289,102 @@
       "category": "ai-robotics",
       "slug": "physical-ai-sim-to-real-transfer-and-robot-learning-pipelines",
       "priority": 2
+    },
+    {
+      "topic": "ros2_control Controller Chaining \u2014 Cascade and Composite Control",
+      "category": "ros2",
+      "slug": "ros2-control-controller-chaining-cascade-and-composite-control",
+      "priority": 2
+    },
+    {
+      "topic": "Humanoid Robot Integration with ROS2 \u2014 Full-Body Control and Planning",
+      "category": "manipulation",
+      "slug": "humanoid-robot-integration-with-ros2-full-body-control-and-planning",
+      "priority": 2
+    },
+    {
+      "topic": "Imitation Learning for Manipulation \u2014 ACT and Diffusion Policy",
+      "category": "ai-robotics",
+      "slug": "imitation-learning-for-manipulation-act-and-diffusion-policy",
+      "priority": 2
+    },
+    {
+      "topic": "EtherCAT and Industrial Fieldbus Integration with ROS2",
+      "category": "ros2",
+      "slug": "ethercat-and-industrial-fieldbus-integration-with-ros2",
+      "priority": 2
+    },
+    {
+      "topic": "ROS2 Lyrical Luth \u2014 What's New in the 2026 LTS Release",
+      "category": "ros2",
+      "slug": "ros2-lyrical-luth-what-s-new-in-the-2026-lts-release",
+      "priority": 2
+    },
+    {
+      "topic": "Autoware Universe \u2014 Open-Source Autonomous Driving Stack with ROS2",
+      "category": "navigation",
+      "slug": "autoware-universe-open-source-autonomous-driving-stack-with-ros2",
+      "priority": 2
+    },
+    {
+      "topic": "Migrating from ROS1 to ROS2 \u2014 Practical Guide Post-Noetic EOL",
+      "category": "ros2",
+      "slug": "migrating-from-ros1-to-ros2-practical-guide-post-noetic-eol",
+      "priority": 2
+    },
+    {
+      "topic": "robot_localization \u2014 EKF and UKF State Estimation in ROS2",
+      "category": "navigation",
+      "slug": "robot-localization-ekf-and-ukf-state-estimation-in-ros2",
+      "priority": 2
+    },
+    {
+      "topic": "NVIDIA cuVSLAM \u2014 GPU-Accelerated Visual SLAM in ROS2",
+      "category": "ai-robotics",
+      "slug": "nvidia-cuvslam-gpu-accelerated-visual-slam-in-ros2",
+      "priority": 2
+    },
+    {
+      "topic": "nvblox \u2014 Real-Time 3D Scene Reconstruction and Nav2 Costmap Integration",
+      "category": "navigation",
+      "slug": "nvblox-real-time-3d-scene-reconstruction-and-nav2-costmap-integration",
+      "priority": 2
+    },
+    {
+      "topic": "ROS2 Image Transport \u2014 Compressed Video and Synchronized Vision Pipelines",
+      "category": "ros2",
+      "slug": "ros2-image-transport-compressed-video-and-synchronized-vision-pipelines",
+      "priority": 2
+    },
+    {
+      "topic": "Colosseum \u2014 Open-Source UAV and Ground Robot Simulation on Unreal Engine",
+      "category": "software",
+      "slug": "colosseum-open-source-uav-and-ground-robot-simulation-on-unreal-engine",
+      "priority": 2
+    },
+    {
+      "topic": "Isaac ROS \u2014 NITROS and GPU-Accelerated Perception Pipeline",
+      "category": "ai-robotics",
+      "slug": "isaac-ros-nitros-and-gpu-accelerated-perception-pipeline",
+      "priority": 2
+    },
+    {
+      "topic": "Open-RMF \u2014 Multi-Robot Fleet Management with ROS2",
+      "category": "navigation",
+      "slug": "open-rmf-multi-robot-fleet-management-with-ros2",
+      "priority": 2
+    },
+    {
+      "topic": "Agentic AI with ROS2 \u2014 LLMs as Deliberative Task Planners",
+      "category": "ai-robotics",
+      "slug": "agentic-ai-with-ros2-llms-as-deliberative-task-planners",
+      "priority": 2
+    },
+    {
+      "topic": "NVIDIA Isaac Sim \u2014 Synthetic Data Generation for Robot Perception",
+      "category": "software",
+      "slug": "nvidia-isaac-sim-synthetic-data-generation-for-robot-perception",
+      "priority": 2
     }
   ],
   "done": [
@@ -373,13 +457,29 @@
       "slug": "ros2-qos",
       "priority": 1,
       "written": "2026-06-10T10:01:39.199999+05:30"
+    },
+    {
+      "topic": "ROS2 Bag Files \u2014 Recording and Playback",
+      "category": "ros2",
+      "slug": "ros2-bag-files",
+      "priority": 2,
+      "written": "2026-06-30T10:01:35.058177+05:30"
+    },
+    {
+      "topic": "ROS2 Lifecycle Nodes",
+      "category": "ros2",
+      "slug": "ros2-lifecycle-nodes",
+      "priority": 2,
+      "written": "2026-07-08T10:01:35.925437+05:30"
     }
   ],
   "flagged": [
     "ros2-nodes",
-    "ros2-tf2"
+    "ros2-tf2",
+    "ros2-urdf",
+    "ros2-bag-files"
   ],
   "last_discovery": null,
   "last_audit": null,
-  "last_written": "2026-06-10T10:01:39.200072+05:30"
+  "last_written": "2026-07-08T10:01:35.925460+05:30"
 }

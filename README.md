@@ -17,7 +17,7 @@ A growing knowledge base on ROS2, robotics, and AI — notes, guides, and code e
 ## Progress
 
 <!-- PROGRESS -->
-Articles written: 10 | Queue: 50
+Articles written: 12 | Queue: 64
 <!-- /PROGRESS -->
 
 ---
@@ -29,7 +29,9 @@ Articles written: 10 | Queue: 50
 
 - [ROS2 Actions — Long Running Tasks](./ros2/ros2-actions.md)
 - [ROS2 Architecture Overview](./ros2/ros2-architecture-overview.md)
+- [ROS2 Bag Files — Recording and Playback](./ros2/ros2-bag-files.md)
 - [ROS2 Launch Files — Orchestrating Systems](./ros2/ros2-launch-files.md)
+- [ROS2 Lifecycle Nodes](./ros2/ros2-lifecycle-nodes.md)
 - [ROS2 Nodes — Creating and Managing](./ros2/ros2-nodes.md)
 - [ROS2 Parameters — Configuration at Runtime](./ros2/ros2-parameters.md)
 - [ROS2 QoS — Quality of Service Policies](./ros2/ros2-qos.md)
