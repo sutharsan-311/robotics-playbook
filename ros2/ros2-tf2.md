@@ -19,18 +19,74 @@ On the consumer side, `Buffer` + `TransformListener` subscribe to both topics an
 
 ---
 
+## REP-105 standard frame hierarchy
+
+[REP-105](https://www.ros.org/reps/rep-0105.html) defines the canonical frame naming convention used by Nav2, MoveIt 2, robot_localization, and every ecosystem package. Deviating from it silently breaks compatibility.
+
+```
+earth          (optional — multi-map or GPS-fused systems)
+  └── map      (world-fixed; origin = robot start position; can jump on AMCL update)
+        └── odom   (world-fixed; odometry-integrated; smooth but drifts over time)
+              └── base_link   (rigidly attached to robot chassis, rotational center)
+                    ├── base_footprint  (projection of base_link onto the ground plane)
+                    ├── imu_link
+                    ├── lidar_link
+                    └── camera_link
+```
+
+**Critical rules:**
+- `map → odom` is published by the localization stack (AMCL, Cartographer). It **can jump** when the pose estimate is corrected.
+- `odom → base_link` is published by the odometry source (wheel encoders, visual odometry, robot_localization). It is **always continuous and smooth**.
+- `base_link → sensor frames` are published by `robot_state_publisher` from URDF + joint states. They are typically static or driven by joint encoders.
+- **Only one node may publish each edge.** Two nodes both publishing `odom → base_link` causes oscillating TF and immediate Nav2 failures.
+
+---
+
 ## How it works
 
 ### Broadcasting a dynamic transform (Python)
 
-The example below is taken directly from the official `geometry_tutorials` repository (Apache 2.0). It publishes the world → turtle frame each time the turtle's pose updates:
+The official Jazzy tutorial defines `quaternion_from_euler` inline using `math` and `numpy` — the `tf_transformations` package is not ported to ROS 2 on all distros, so the inline definition is the safe pattern. Code taken from [`learning_tf2_py/turtle_tf2_broadcaster.py`](https://github.com/ros/geometry_tutorials/blob/ros2/turtle_tf2_py/turtle_tf2_py/turtle_tf2_broadcaster.py):
 
 ```python
+# Source: docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Writing-A-Tf2-Broadcaster-Py.html
+import math
+
 from geometry_msgs.msg import TransformStamped
+
+import numpy as np
+
 import rclpy
 from rclpy.node import Node
+
 from tf2_ros import TransformBroadcaster
+
 from turtlesim.msg import Pose
+
+
+def quaternion_from_euler(ai, aj, ak):
+    """Convert roll/pitch/yaw (radians) to a quaternion [x, y, z, w]."""
+    ai /= 2.0
+    aj /= 2.0
+    ak /= 2.0
+    ci = math.cos(ai)
+    si = math.sin(ai)
+    cj = math.cos(aj)
+    sj = math.sin(aj)
+    ck = math.cos(ak)
+    sk = math.sin(ak)
+    cc = ci * ck
+    cs = ci * sk
+    sc = si * ck
+    ss = si * sk
+
+    q = np.empty((4,))
+    q[0] = cj * sc - sj * cs   # x
+    q[1] = cj * ss + sj * cc   # y
+    q[2] = cj * cs - sj * sc   # z
+    q[3] = cj * cc + sj * ss   # w
+    return q
+
 
 class FramePublisher(Node):
 
@@ -56,35 +112,72 @@ class FramePublisher(Node):
         t.transform.translation.z = 0.0
 
         # Turtlesim is 2-D; rotation is only around Z
-        q = quaternion_from_euler(0, 0, msg.theta)  # returns [x, y, z, w]
+        q = quaternion_from_euler(0, 0, msg.theta)
         t.transform.rotation.x = q[0]
         t.transform.rotation.y = q[1]
         t.transform.rotation.z = q[2]
         t.transform.rotation.w = q[3]
 
         self.tf_broadcaster.sendTransform(t)
+
+
+def main():
+    rclpy.init()
+    node = FramePublisher()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    rclpy.shutdown()
 ```
+
+**Alternative:** If you have `tf_transformations` installed (`sudo apt install ros-jazzy-tf-transformations`), you can replace the inline function with `from tf_transformations import quaternion_from_euler`. The inline version has no extra dependencies and is what the official Jazzy tutorial ships.
 
 ### Listening for a transform (Python)
 
+Code taken from the official Jazzy listener tutorial. Use `TransformException` (not bare `Exception`) to get a meaningful error message that includes which frame is missing:
+
 ```python
+# Source: docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Writing-A-Tf2-Listener-Py.html
+import rclpy
+from rclpy.node import Node
+
+from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 
-self.tf_buffer = Buffer()
-self.tf_listener = TransformListener(self.tf_buffer, self)
 
-# In a timer or callback:
-try:
-    t = self.tf_buffer.lookup_transform(
-        'turtle2',          # target frame
-        'turtle1',          # source frame
-        rclpy.time.Time())  # latest available
-except Exception as e:
-    self.get_logger().warn(str(e))
+class FrameListener(Node):
+
+    def __init__(self):
+        super().__init__('turtle_tf2_frame_listener')
+
+        self.target_frame = self.declare_parameter(
+            'target_frame', 'turtle1').get_parameter_value().string_value
+
+        # Buffer + TransformListener must be stored as members — if created
+        # as locals they go out of scope immediately and receive no data.
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        self.timer = self.create_timer(1.0, self.on_timer)
+
+    def on_timer(self):
+        from_frame = self.target_frame
+        to_frame = 'turtle2'
+        try:
+            t = self.tf_buffer.lookup_transform(
+                to_frame,
+                from_frame,
+                rclpy.time.Time())   # Time(0) = latest available
+        except TransformException as ex:
+            self.get_logger().info(
+                f'Could not transform {to_frame} to {from_frame}: {ex}')
+            return
+        # t.transform now holds the composed transform
 ```
 
-`rclpy.time.Time()` (equivalent to `Time(0)`) requests the **latest available** transform — generally the safest default in a timer-driven loop.
+`rclpy.time.Time()` (equivalent to `Time(0)`) requests the **latest available** transform — generally the safest default in a timer-driven loop. Passing `node.get_clock().now()` instead causes `ExtrapolationException` on the first tick before the broadcaster has emitted even one message.
 
 ### Broadcasting a dynamic transform (C++)
 
@@ -119,7 +212,7 @@ private:
         t.transform.translation.z = 0.0;
 
         tf2::Quaternion q;
-        q.setRPY(0, 0, msg->theta);
+        q.setRPY(0, 0, msg->theta);   // roll=0, pitch=0, yaw=theta
         t.transform.rotation.x = q.x();
         t.transform.rotation.y = q.y();
         t.transform.rotation.z = q.z();
@@ -133,6 +226,8 @@ private:
     rclcpp::Subscription<turtlesim::msg::Pose>::SharedPtr sub_;
 };
 ```
+
+In C++, `tf2::Quaternion::setRPY(roll, pitch, yaw)` is the correct API — no external package needed. Never use Euler angles directly in a `TransformStamped`; always convert via `setRPY` or the equivalent.
 
 ### Listening for a transform (C++)
 
@@ -158,16 +253,16 @@ private:
     void timerCallback() {
         geometry_msgs::msg::TransformStamped t;
         try {
-            // 50ms timeout — blocks until the transform is available or throws
+            // tf2::TimePointZero = latest available; 50ms timeout
             t = tf_buffer_->lookupTransform(
                 "turtle2", "turtle1",
-                tf2::TimePointZero,    // latest available transform
-                50ms);                 // wait up to 50 ms
+                tf2::TimePointZero,
+                50ms);
         } catch (const tf2::TransformException & ex) {
             RCLCPP_WARN(this->get_logger(), "Could not transform: %s", ex.what());
             return;
         }
-        // t.transform now holds the composed turtle1→turtle2 transform
+        // t.transform now holds the composed turtle1 → turtle2 transform
     }
 
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
@@ -176,7 +271,7 @@ private:
 };
 ```
 
-`tf2::TimePointZero` is the C++ equivalent of Python's `rclpy.time.Time()` — it requests the latest cached transform, avoiding ExtrapolationException on the first few timer ticks.
+`tf2::TimePointZero` is the C++ equivalent of Python's `rclpy.time.Time()` — it requests the latest cached transform, avoiding `ExtrapolationException` on the first few timer ticks.
 
 ---
 
@@ -191,7 +286,6 @@ Looking up a raw `TransformStamped` and then multiplying coordinates manually is
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
 
-// Stamp the point in its source frame:
 geometry_msgs::msg::PointStamped pt_in, pt_out;
 pt_in.header.stamp = this->get_clock()->now();
 pt_in.header.frame_id = "base_link";
@@ -222,14 +316,14 @@ try:
     t = self.tf_buffer.lookup_transform(
         'map',
         'base_link',
-        sensor_msg.header.stamp,            # time the data was captured
+        sensor_msg.header.stamp,                       # time the data was captured
         timeout=rclpy.duration.Duration(seconds=0.1))
-except Exception as e:
-    self.get_logger().warn(str(e))
+except TransformException as ex:
+    self.get_logger().warn(str(ex))
 ```
 
 ```cpp
-// C++: look up the transform at a historical timestamp (Jazzy docs)
+// C++: look up at a historical timestamp
 // Source: docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Learning-About-Tf2-And-Time-Cpp.html
 rclcpp::Time when = this->get_clock()->now() - rclcpp::Duration(5, 0);  // 5 s ago
 try {
@@ -243,7 +337,7 @@ try {
 
 ```cpp
 // Source: docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Time-Travel-With-Tf2-Cpp.html
-// "Where was carrot1 relative to turtle2 *now*, given that carrot1's pose was captured 5 s ago?"
+// "Where was carrot1 relative to turtle2 *now*, given carrot1's pose was captured 5 s ago?"
 rclcpp::Time past = this->get_clock()->now() - rclcpp::Duration(5, 0);
 t = tf_buffer_->lookupTransform(
     "turtle2",                      // target frame, evaluated at *now*
@@ -268,42 +362,50 @@ ros2 run tf2_tools view_frames
 # Show per-link timing statistics (average delay, Hz, last update)
 ros2 run tf2_ros tf2_monitor base_link odom
 
-# One-shot: print current transform between two frames
+# One-shot: print current transform between two frames (wait up to 2 s for it)
 ros2 run tf2_ros tf2_echo --wait-for-message-timeout 2.0 map base_link
 ```
+
+`view_frames` is the first tool to run when debugging TF problems — it generates a PDF of the entire frame graph and makes disconnected subtrees immediately visible. `tf2_monitor` tells you *which broadcaster* is publishing each link and at what rate, which pinpoints a stalled publisher.
 
 ---
 
 ## Common pitfalls
 
-**1. Extrapolation into the future.**  
-Requesting `lookup_transform` at `node.get_clock().now()` before the broadcaster's first message arrives causes:  
-`ExtrapolationException: Lookup would require extrapolation into the future`.  
+**1. Calling `quaternion_from_euler` without defining or importing it (Python).**
+In the official Jazzy tutorial, `quaternion_from_euler` is defined **inline** using `math` and `numpy`. There is no `from tf2_ros import quaternion_from_euler`. If you copy the function call without the definition, you get a `NameError` at runtime. Either include the inline definition (shown above) or install and import `tf_transformations` (`sudo apt install ros-jazzy-tf-transformations`).
+
+**2. Extrapolation into the future.**
+Requesting `lookup_transform` at `node.get_clock().now()` before the broadcaster's first message arrives causes:
+`ExtrapolationException: Lookup would require extrapolation into the future`.
 Use `rclpy.time.Time()` / `tf2::TimePointZero` (latest) instead of `now()`, or pass a `timeout=Duration(seconds=0.1)` / `50ms` to block until the transform is available.
 
-**2. Missing frames silently breaking the tree.**  
-If any link in the chain from source → target is absent, the lookup raises `LookupException: ... does not exist`. Always wrap `lookup_transform` in a `try/except` / `try/catch` and log the frame name — the error message tells you exactly which frame is missing. Run `view_frames` to visualise gaps.
-
-**3. Publishing `/tf` at the wrong rate or in the wrong callback.**  
-Emitting a transform once at startup inside `__init__` / the constructor is only correct for static frames (use `StaticTransformBroadcaster`). Dynamic frames must be re-published every time the underlying state changes, typically inside a subscription callback or a high-frequency timer. A stale TF causes downstream nodes (Nav2, MoveIt) to refuse transforms silently.
-
-**4. Not storing the `TransformListener` as a member variable.**  
+**3. Not storing `TransformListener` as a member variable.**
 `TransformListener` starts background threads and subscriptions when constructed. If created as a local variable it goes out of scope immediately, the subscriptions are torn down, and the `Buffer` never receives any data. Always store it as a member (`self.tf_listener` / `tf_listener_`).
 
-**5. Static transforms published repeatedly on `/tf`.**  
-`StaticTransformBroadcaster` publishes to `/tf_static`, which uses TRANSIENT_LOCAL durability — late-joining nodes automatically receive the cached value. If you accidentally publish static transforms on `/tf`, late-joining nodes miss them and get `LookupException` until the next rebroadcast.
+**4. Publishing dynamic transforms with `StaticTransformBroadcaster`.**
+`StaticTransformBroadcaster` publishes to `/tf_static` with `TRANSIENT_LOCAL` durability — the last published value is cached and re-delivered to late-joining subscribers, but it is never updated by subsequent `sendTransform()` calls in the same session (the topic is latched). If a frame is dynamic (e.g. an arm link), use `TransformBroadcaster` on `/tf`.
+
+**5. Two nodes publishing the same transform edge.**
+TF2 has no arbitration — if both `robot_localization` and a custom node publish `odom → base_link`, the buffer receives interleaved conflicting data. Downstream consumers (Nav2, MoveIt) will see jitter, warnings about TF going backwards in time, or planner crashes. Each transform edge must have exactly one publisher.
+
+**6. Static transforms published on `/tf` instead of `/tf_static`.**
+`StaticTransformBroadcaster` uses `TRANSIENT_LOCAL` durability — late-joining nodes automatically receive the cached value. If you accidentally publish static transforms on `/tf` (e.g. by using `TransformBroadcaster` once at startup), late-joining nodes miss them and get `LookupException` until the next rebroadcast.
 
 ---
 
 ## Further reading
 
 - [TF2 Tutorial Series — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Tf2-Main.html) — official step-by-step tutorials covering broadcaster, listener, time travel, and frames
+- [Writing a TF2 Broadcaster (Python) — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Writing-A-Tf2-Broadcaster-Py.html) — full Python broadcaster with inline `quaternion_from_euler` definition
 - [Writing a TF2 Listener (C++) — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Writing-A-Tf2-Listener-Cpp.html) — full C++ listener with Buffer setup and lookupTransform
 - [Traveling in Time (C++) — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Time-Travel-With-Tf2-Cpp.html) — six-argument lookupTransform and fixed-frame API
 - [Debugging TF2 Problems — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Debugging-Tf2-Problems.html) — systematic walkthrough of tf2_echo, tf2_monitor, and view_frames with real error outputs
-- [ros2_cookbook — rclcpp/tf2.md (mikeferguson, GitHub)](https://github.com/mikeferguson/ros2_cookbook/blob/main/rclcpp/tf2.md) — concise C++ recipes for buffer.transform() and tf2_geometry_msgs
+- [REP-105 — Coordinate Frames for Mobile Platforms](https://www.ros.org/reps/rep-0105.html) — the canonical definition of map, odom, base_link, and earth frames with their transform semantics
+- [Setting Up Transformations — Nav2 docs](https://navigation.ros.org/setup_guides/transformation/setup_transforms.html) — REP-105 in practice: which node publishes which edge, robot_localization integration
+- [ros2_cookbook — rclcpp/tf2.md (mikeferguson, GitHub)](https://github.com/mikeferguson/ros2_cookbook/blob/main/rclcpp/tf2.md) — concise C++ recipes for `buffer.transform()` and `tf2_geometry_msgs`
 - [ros/geometry_tutorials (GitHub)](https://github.com/ros/geometry_tutorials) — the canonical C++ and Python broadcaster/listener source referenced throughout the official docs
 
 ---
 
-*2026-06-20 | ROS 2 version: Jazzy / Humble*
+*2026-07-25 | ROS 2 version: Jazzy / Humble*
