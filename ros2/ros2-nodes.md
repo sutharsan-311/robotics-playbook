@@ -22,13 +22,16 @@ ROS2 ships three increasingly powerful node variants:
 
 The **Executor** is the thread model that dispatches callbacks. `rclpy.spin()` is shorthand for a `SingleThreadedExecutor` — all callbacks share one thread. This is fine for simple nodes; it deadlocks the moment a callback blocks (sleeps, calls a service synchronously, or calls `spin_until_future_complete()` on its own executor).
 
-Three executor types are available in both rclcpp and rclpy:
+Four executor types are available in rclcpp on Jazzy:
 
 | Executor | Threading | When to use |
 |---|---|---|
 | `SingleThreadedExecutor` | 1 thread | Simple nodes; no blocking callbacks |
 | `MultiThreadedExecutor` | N threads (default: CPU count) | Nodes with parallel callbacks or blocking calls |
 | `StaticSingleThreadedExecutor` | 1 thread, static callback table | Lower overhead in real-time contexts; all entities must be created before `spin()` |
+| `EventsExecutor` *(experimental)* | Event-driven, 1+ threads | Lower CPU usage, lower latency, deterministic ordering; drop-in for latency-sensitive pipelines |
+
+`EventsExecutor` lives under `rclcpp::experimental::executors::EventsExecutor` (Jazzy+). It replaces the polling model used by the three standard executors with an event queue — callbacks are invoked immediately when the underlying DDS or timer fires, rather than on the next spin cycle. It is still marked experimental and has a known issue with timer reset in some edge cases ([rclcpp#2889](https://github.com/ros2/rclcpp/issues/2889)); validate against your workload before using in production.
 
 Switch to `MultiThreadedExecutor` and assign callbacks to groups to control concurrency:
 
@@ -123,7 +126,33 @@ int main(int argc, char ** argv) {
 
 **Keep the callback group reference on `self` / as a member variable.** In rclcpp, a callback group assigned to a local variable goes out of scope and the executor silently drops those callbacks — no error, no warning. In rclpy the same applies.
 
-Since Galactic, rclcpp also exposes `executor.add_callback_group(group, node->get_node_base_interface())`, allowing you to distribute individual callback groups across separate executors — useful for pinning time-sensitive callbacks to a dedicated real-time thread.
+### Pinning a callback group to a dedicated executor (rclcpp)
+
+`executor.add_callback_group(group, node->get_node_base_interface())` lets you distribute individual callback groups across separate executor instances — useful for pinning time-sensitive callbacks to a dedicated real-time thread while keeping the rest of the node on the main executor:
+
+```cpp
+// Source: docs.ros.org/en/jazzy/How-To-Guides/Using-callback-groups.html
+auto realtime_group = node->create_callback_group(
+    rclcpp::CallbackGroupType::MutuallyExclusive,
+    false);  // false = don't auto-add to node's default executor
+
+rclcpp::SubscriptionOptions opts;
+opts.callback_group = realtime_group;
+auto sub = node->create_subscription<sensor_msgs::msg::Imu>(
+    "/imu/data", 10, imu_callback, opts);
+
+// Main executor owns the rest of the node
+rclcpp::executors::SingleThreadedExecutor main_exec;
+main_exec.add_node(node);
+
+// Dedicated executor owns only the realtime group
+rclcpp::executors::StaticSingleThreadedExecutor rt_exec;
+rt_exec.add_callback_group(realtime_group, node->get_node_base_interface());
+
+// Spin the RT executor on a separate thread
+std::thread rt_thread([&rt_exec]() { rt_exec.spin(); });
+main_exec.spin();
+```
 
 ---
 
@@ -209,6 +238,26 @@ ros2 lifecycle get /lc_talker   # print current state
 
 Composable nodes (C++ only) run inside a **component container** process, sharing an address space and DDS subscription. This eliminates cross-process serialization overhead — critical for high-bandwidth pipelines (cameras, point clouds). The same component can be loaded at runtime via `ros2 component load` or statically via a launch file.
 
+### Container types
+
+Three containers ship with `rclcpp_components`:
+
+| Container executable | Executor model | When to use |
+|---|---|---|
+| `component_container` | `SingleThreadedExecutor` | Simple co-located nodes; no blocking callbacks |
+| `component_container_mt` | `MultiThreadedExecutor` | Concurrent callbacks across multiple components |
+| `component_container_isolated` | Dedicated executor **per component** | Fault isolation; mix executor types; one component's blocking callback cannot stall others |
+
+`component_container_isolated` (added to the Jazzy/Rolling line) starts a dedicated executor for each loaded component. This prevents a blocking callback in one component from starving others — the key limitation of `component_container_mt` where all components share a single executor's thread pool.
+
+Run `component_container_isolated` with a multi-threaded executor per component (for components that themselves use callback groups):
+```bash
+ros2 run rclcpp_components component_container_isolated \
+    --use_multi_threaded_executor
+```
+
+*(Source: [rclcpp_components/src/component_container_isolated.cpp — ros2/rclcpp, rolling](https://github.com/ros2/rclcpp/blob/rolling/rclcpp_components/src/component_container_isolated.cpp))*
+
 ### Registering a component
 
 Every composable node must register itself with the component system using the macro from `rclcpp_components`:
@@ -226,7 +275,7 @@ The macro generates the factory function the container uses to instantiate your 
 ### Launching components into a shared container
 
 ```python
-# Source: docs.ros.org/en/humble/How-To-Guides/Launching-composable-nodes.html
+# Source: docs.ros.org/en/jazzy/How-To-Guides/Launching-composable-nodes.html
 import launch
 from launch_ros.actions import ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
@@ -278,10 +327,13 @@ Two nodes sharing a FQN cause silent kills. Always parameterize the node name in
 These entities must be created in `on_configure()` and destroyed in `on_cleanup()`. Creating them in the constructor means they are active before the state machine permits — you'll publish without an active lifecycle publisher and get silent message drops.
 
 **4. Using `component_container` (single-threaded) for concurrent components.**  
-If one component's callback blocks, all others in that container stall. Use `component_container_mt` to spin with a `MultiThreadedExecutor`, or load time-sensitive components into separate containers.
+If one component's callback blocks, all others in that container stall. Use `component_container_mt` for shared concurrency, or `component_container_isolated` when components must be fully isolated from each other's blocking behaviour.
 
 **5. Letting callback group handles go out of scope (rclcpp).**  
 `create_callback_group()` returns a `shared_ptr`. If you don't store it as a member, the group is destroyed and the executor silently stops scheduling those callbacks. Store every group as a named member variable.
+
+**6. Calling `EventsExecutor` on nodes that reset timers at high frequency.**  
+A known issue ([rclcpp#2889](https://github.com/ros2/rclcpp/issues/2889)) can cause `EventsExecutor` to miss timer callbacks after a timer reset. If your node cancels and recreates timers dynamically (common in action server patterns), test thoroughly or fall back to `StaticSingleThreadedExecutor`.
 
 ---
 
@@ -289,11 +341,13 @@ If one component's callback blocks, all others in that container stall. Use `com
 
 - [About Executors — ROS 2 Jazzy docs](https://docs.ros.org/en/jazzy/Concepts/Intermediate/About-Executors.html) — thread model, callback scheduling, StaticSingleThreadedExecutor, real-time considerations
 - [Using Callback Groups — ROS 2 Jazzy docs](https://docs.ros.org/en/jazzy/How-To-Guides/Using-callback-groups.html) — complete rclpy and rclcpp examples with concurrency rules
+- [Class EventsExecutor — rclcpp Jazzy API](https://docs.ros.org/en/jazzy/p/rclcpp/generated/classrclcpp_1_1experimental_1_1executors_1_1EventsExecutor.html) — event-driven executor API reference; still experimental in Jazzy
 - [Deadlocks in rclpy and how to prevent them — Karelics](https://karelics.fi/deadlocks-in-rclpy/) — detailed walkthrough of every deadlock pattern in single- and multi-threaded executors
 - [Managed Nodes (lifecycle) design article — design.ros2.org](https://design.ros2.org/articles/node_lifecycle.html) — state machine spec, rationale, and transition semantics
-- [Writing a Composable Node (C++) — ROS 2 Humble docs](https://docs.ros.org/en/humble/Tutorials/Intermediate/Writing-a-Composable-Node.html) — CMakeLists, register macro, NodeOptions constructor pattern
+- [Composing Multiple Nodes in a Single Process — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Composition.html) — component container types, CLI demo, and intra-process comms tutorial (Jazzy)
+- [Using ROS 2 launch to launch composable nodes — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/How-To-Guides/Launching-composable-nodes.html) — CMakeLists, register macro, NodeOptions constructor, Python/XML/YAML launch examples
 - [ros2/demos — lifecycle_py (GitHub)](https://github.com/ros2/demos/tree/humble/lifecycle_py) — full lifecycle talker/listener source used in this article
 - [ros2/examples — rclpy executors (GitHub)](https://github.com/ros2/examples/tree/rolling/rclpy/executors) — callback group and executor patterns used in this article
 
 ---
-*2026-06-13 | ROS2 version: Jazzy / Humble*
+*2026-08-01 | ROS2 version: Jazzy / Humble*
