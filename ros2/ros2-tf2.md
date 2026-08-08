@@ -306,6 +306,178 @@ The same `transform()` method works for any `geometry_msgs` stamped type: `PoseS
 
 ---
 
+## MessageFilter — processing sensor data when TF is ready
+
+A common failure mode: your depth camera or LiDAR subscriber callback calls `lookupTransform` and gets `ExtrapolationException` because the sensor message arrived before the TF tree has data for its timestamp. The naive fix — retrying in a loop or ignoring the exception — either blocks the executor or silently drops data.
+
+`tf2_ros::MessageFilter` solves this correctly. It wraps any `message_filters::Subscriber` to any stamped message type and **caches incoming messages until the required transform is available**, then delivers them to your callback. No polling, no dropping, no blocking.
+
+**When to use it:**
+- Subscribing to `/camera/depth/points` (PointCloud2) and transforming to `map` frame
+- Processing `/scan` (LaserScan) with a frame that's published by `robot_state_publisher` at a different rate
+- Any pipeline where sensor timestamps and TF timestamps are produced by different nodes
+
+### C++ — full MessageFilter node
+
+The complete `PoseDrawer` node from [`ros/geometry_tutorials` — `jazzy` branch](https://github.com/ros/geometry_tutorials/blob/ros2/turtle_tf2_cpp/src/turtle_tf2_message_filter.cpp) (Apache 2.0):
+
+```cpp
+// Source: github.com/ros/geometry_tutorials/blob/ros2/turtle_tf2_cpp/src/turtle_tf2_message_filter.cpp
+// (Apache 2.0 — ros/geometry_tutorials)
+#include <chrono>
+#include <memory>
+#include <string>
+
+#include "geometry_msgs/msg/point_stamped.hpp"
+#include "message_filters/subscriber.h"
+#include "rclcpp/rclcpp.hpp"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/create_timer_ros.h"
+#include "tf2_ros/message_filter.h"
+#include "tf2_ros/transform_listener.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+
+using namespace std::chrono_literals;
+
+class PoseDrawer : public rclcpp::Node
+{
+public:
+    PoseDrawer()
+    : Node("turtle_tf2_pose_drawer")
+    {
+        target_frame_ = this->declare_parameter<std::string>("target_frame", "turtle1");
+
+        std::chrono::duration<int> buffer_timeout(1);
+
+        tf2_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+
+        // REQUIRED: set the CreateTimerROS interface on the buffer before
+        // constructing MessageFilter — omitting this causes
+        // tf2_ros::CreateTimerInterfaceException at runtime.
+        auto timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
+            this->get_node_base_interface(),
+            this->get_node_timers_interface());
+        tf2_buffer_->setCreateTimerInterface(timer_interface);
+
+        tf2_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf2_buffer_);
+
+        // Subscribe to the stamped message topic via message_filters
+        point_sub_.subscribe(this, "/turtle3/turtle_point_stamped");
+
+        // MessageFilter: holds messages until canTransform(target_frame_,
+        // msg.header.frame_id, msg.header.stamp) returns true.
+        // Queue depth = 100 messages; buffer_timeout = 1 s.
+        tf2_filter_ = std::make_shared<
+            tf2_ros::MessageFilter<geometry_msgs::msg::PointStamped>>(
+                point_sub_,
+                *tf2_buffer_,
+                target_frame_,
+                100,                                    // queue depth
+                this->get_node_logging_interface(),
+                this->get_node_clock_interface(),
+                buffer_timeout);
+
+        // Callback fires only when the transform is available for the message's timestamp
+        tf2_filter_->registerCallback(&PoseDrawer::msgCallback, this);
+    }
+
+private:
+    void msgCallback(const geometry_msgs::msg::PointStamped::SharedPtr point_ptr)
+    {
+        geometry_msgs::msg::PointStamped point_out;
+        try {
+            // buffer->transform() applies the looked-up transform in one call
+            tf2_buffer_->transform(*point_ptr, point_out, target_frame_);
+            RCLCPP_INFO(this->get_logger(),
+                "Point in frame of %s: x:%.3f y:%.3f z:%.3f",
+                target_frame_.c_str(),
+                point_out.point.x, point_out.point.y, point_out.point.z);
+        } catch (const tf2::TransformException & ex) {
+            RCLCPP_WARN(this->get_logger(), "Transform failed: %s", ex.what());
+        }
+    }
+
+    std::string target_frame_;
+    std::shared_ptr<tf2_ros::Buffer> tf2_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf2_listener_;
+    message_filters::Subscriber<geometry_msgs::msg::PointStamped> point_sub_;
+    std::shared_ptr<tf2_ros::MessageFilter<geometry_msgs::msg::PointStamped>> tf2_filter_;
+};
+
+int main(int argc, char * argv[])
+{
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<PoseDrawer>());
+    rclcpp::shutdown();
+    return 0;
+}
+```
+
+### CMakeLists.txt and package.xml
+
+```cmake
+# CMakeLists.txt — additional find_package entries needed beyond rclcpp / tf2_ros
+find_package(message_filters REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+
+add_executable(my_filter_node src/my_filter_node.cpp)
+ament_target_dependencies(my_filter_node
+    geometry_msgs
+    message_filters
+    rclcpp
+    tf2
+    tf2_geometry_msgs
+    tf2_ros
+)
+```
+
+```xml
+<!-- package.xml -->
+<depend>message_filters</depend>
+<depend>tf2_geometry_msgs</depend>
+```
+
+*(Source: [Using stamped datatypes with tf2_ros::MessageFilter — ROS 2 Jazzy docs](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Using-Stamped-Datatypes-With-Tf2-Ros-MessageFilter.html))*
+
+### Python — no direct MessageFilter equivalent
+
+`tf2_ros::MessageFilter` is a C++-only class ([geometry2 issue #403](https://github.com/ros/geometry2/issues/403)). The practical Python pattern is to check inside your subscription callback whether the transform is ready, and simply return if it isn't yet — the next message will retry:
+
+```python
+from tf2_ros import TransformException
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
+import tf2_geometry_msgs  # registers do_transform_* for geometry_msgs types
+
+class MyFilterNode(Node):
+    def __init__(self):
+        super().__init__('my_filter_node')
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.create_subscription(
+            PointStamped, '/sensor/point', self.point_cb, 10)
+
+    def point_cb(self, msg: PointStamped):
+        target = 'map'
+        try:
+            # can_transform() is non-blocking; returns False instead of raising
+            if not self.tf_buffer.can_transform(
+                    target, msg.header.frame_id,
+                    msg.header.stamp,
+                    timeout=rclpy.duration.Duration(seconds=0.0)):
+                # Transform not yet available — drop this message and wait for the next
+                return
+            pt_out = self.tf_buffer.transform(msg, target)
+        except TransformException as ex:
+            self.get_logger().warn(f'Transform failed: {ex}')
+            return
+        # pt_out is now a PointStamped in the "map" frame
+```
+
+The `timeout=Duration(seconds=0.0)` makes `can_transform` return immediately rather than blocking — equivalent to `canTransform` in C++. Pass a non-zero duration only if you are on a `MultiThreadedExecutor` and the callback is in its own `MutuallyExclusiveCallbackGroup`; blocking on a single-threaded executor deadlocks.
+
+---
+
 ## Time travel
 
 TF2's buffer stores a history window (default 10 s). You can query the transform between two frames **at a past timestamp** — useful for sensor fusion where a point cloud was captured 200 ms ago and you need the robot pose *at that moment*, not now:
@@ -392,6 +564,9 @@ TF2 has no arbitration — if both `robot_localization` and a custom node publis
 **6. Static transforms published on `/tf` instead of `/tf_static`.**
 `StaticTransformBroadcaster` uses `TRANSIENT_LOCAL` durability — late-joining nodes automatically receive the cached value. If you accidentally publish static transforms on `/tf` (e.g. by using `TransformBroadcaster` once at startup), late-joining nodes miss them and get `LookupException` until the next rebroadcast.
 
+**7. Forgetting `CreateTimerROS` when using `MessageFilter`.**
+Constructing `tf2_ros::MessageFilter` without first calling `tf2_buffer_->setCreateTimerInterface(...)` throws `tf2_ros::CreateTimerInterfaceException` at runtime. The `CreateTimerROS` interface must be wired up before the `TransformListener` and `MessageFilter` are constructed (see example above).
+
 ---
 
 ## Further reading
@@ -399,6 +574,7 @@ TF2 has no arbitration — if both `robot_localization` and a custom node publis
 - [TF2 Tutorial Series — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Tf2-Main.html) — official step-by-step tutorials covering broadcaster, listener, time travel, and frames
 - [Writing a TF2 Broadcaster (Python) — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Writing-A-Tf2-Broadcaster-Py.html) — full Python broadcaster with inline `quaternion_from_euler` definition
 - [Writing a TF2 Listener (C++) — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Writing-A-Tf2-Listener-Cpp.html) — full C++ listener with Buffer setup and lookupTransform
+- [Using Stamped Datatypes with tf2_ros::MessageFilter — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Using-Stamped-Datatypes-With-Tf2-Ros-MessageFilter.html) — MessageFilter tutorial with full C++ source
 - [Traveling in Time (C++) — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Time-Travel-With-Tf2-Cpp.html) — six-argument lookupTransform and fixed-frame API
 - [Debugging TF2 Problems — ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Debugging-Tf2-Problems.html) — systematic walkthrough of tf2_echo, tf2_monitor, and view_frames with real error outputs
 - [REP-105 — Coordinate Frames for Mobile Platforms](https://www.ros.org/reps/rep-0105.html) — the canonical definition of map, odom, base_link, and earth frames with their transform semantics
@@ -408,4 +584,4 @@ TF2 has no arbitration — if both `robot_localization` and a custom node publis
 
 ---
 
-*2026-07-25 | ROS 2 version: Jazzy / Humble*
+*2026-08-08 | ROS 2 version: Jazzy / Humble*
