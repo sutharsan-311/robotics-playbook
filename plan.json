@@ -1,13 +1,7 @@
 {
   "created": "2026-05-23T13:47:19.804778+05:30",
-  "articles_written": 12,
+  "articles_written": 13,
   "queue": [
-    {
-      "topic": "ROS2 Component Nodes \u2014 Composable Executors",
-      "category": "ros2",
-      "slug": "ros2-component-nodes",
-      "priority": 2
-    },
     {
       "topic": "ROS2 Executors \u2014 Single, Multi-threaded, Static",
       "category": "ros2",
@@ -385,6 +379,102 @@
       "category": "software",
       "slug": "nvidia-isaac-sim-synthetic-data-generation-for-robot-perception",
       "priority": 2
+    },
+    {
+      "topic": "Nav2 MPPI Controller \u2014 Stochastic Trajectory Optimization for Local Planning",
+      "category": "navigation",
+      "slug": "nav2-mppi-controller-stochastic-trajectory-optimization-for-local-planning",
+      "priority": 2
+    },
+    {
+      "topic": "Gazebo Harmonic \u2014 Modern Robot Simulation with gz-sim",
+      "category": "software",
+      "slug": "gazebo-harmonic-modern-robot-simulation-with-gz-sim",
+      "priority": 2
+    },
+    {
+      "topic": "SMACC2 \u2014 Event-Driven Hierarchical State Machines for ROS2",
+      "category": "software",
+      "slug": "smacc2-event-driven-hierarchical-state-machines-for-ros2",
+      "priority": 2
+    },
+    {
+      "topic": "MoveIt Pro \u2014 AI-Enhanced Robot Arm Deployment with PickNik",
+      "category": "manipulation",
+      "slug": "moveit-pro-ai-enhanced-robot-arm-deployment-with-picknik",
+      "priority": 2
+    },
+    {
+      "topic": "Universal Robots ROS2 Driver \u2014 Industrial Arm Integration",
+      "category": "manipulation",
+      "slug": "universal-robots-ros2-driver-industrial-arm-integration",
+      "priority": 2
+    },
+    {
+      "topic": "ROS2 for Unity \u2014 Real-Time Simulation and Digital Twins",
+      "category": "software",
+      "slug": "ros2-for-unity-real-time-simulation-and-digital-twins",
+      "priority": 2
+    },
+    {
+      "topic": "Pixi Package Manager for ROS2 \u2014 Cross-Platform Dependency Management",
+      "category": "ros2",
+      "slug": "pixi-package-manager-for-ros2-cross-platform-dependency-management",
+      "priority": 2
+    },
+    {
+      "topic": "ROS-Industrial 2025 \u2014 Production Deployment Lessons and Real-Time Gaps",
+      "category": "weekly",
+      "slug": "ros-industrial-2025-production-deployment-lessons-and-real-time-gaps",
+      "priority": 2
+    },
+    {
+      "topic": "NVIDIA Isaac Lab \u2014 GPU-Parallel Robot Learning Simulation",
+      "category": "ai-robotics",
+      "slug": "nvidia-isaac-lab-gpu-parallel-robot-learning-simulation",
+      "priority": 2
+    },
+    {
+      "topic": "Foxglove Studio \u2014 Modern Visualization and Debugging for ROS2",
+      "category": "software",
+      "slug": "foxglove-studio-modern-visualization-and-debugging-for-ros2",
+      "priority": 2
+    },
+    {
+      "topic": "MCAP \u2014 The Modern Robot Data Format for rosbag2",
+      "category": "ros2",
+      "slug": "mcap-the-modern-robot-data-format-for-rosbag2",
+      "priority": 2
+    },
+    {
+      "topic": "MoveIt Task Constructor \u2014 Multi-Stage Manipulation Planning",
+      "category": "manipulation",
+      "slug": "moveit-task-constructor-multi-stage-manipulation-planning",
+      "priority": 2
+    },
+    {
+      "topic": "Webots \u2014 Open-Source Robot Simulation with Native ROS2 Support",
+      "category": "software",
+      "slug": "webots-open-source-robot-simulation-with-native-ros2-support",
+      "priority": 2
+    },
+    {
+      "topic": "ORB-SLAM3 \u2014 Visual-Inertial SLAM in ROS2",
+      "category": "navigation",
+      "slug": "orb-slam3-visual-inertial-slam-in-ros2",
+      "priority": 2
+    },
+    {
+      "topic": "Robot Functional Safety \u2014 ISO 10218 Revision and Collaborative Applications",
+      "category": "software",
+      "slug": "robot-functional-safety-iso-10218-revision-and-collaborative-applications",
+      "priority": 2
+    },
+    {
+      "topic": "Genesis Physics Engine \u2014 Differentiable Neural Simulation for Robot Learning",
+      "category": "ai-robotics",
+      "slug": "genesis-physics-engine-differentiable-neural-simulation-for-robot-learning",
+      "priority": 2
     }
   ],
   "done": [
@@ -471,15 +561,24 @@
       "slug": "ros2-lifecycle-nodes",
       "priority": 2,
       "written": "2026-07-08T10:01:35.925437+05:30"
+    },
+    {
+      "topic": "ROS2 Component Nodes \u2014 Composable Executors",
+      "category": "ros2",
+      "slug": "ros2-component-nodes",
+      "priority": 2,
+      "written": "2026-07-25T10:01:58.606755+05:30"
     }
   ],
   "flagged": [
     "ros2-nodes",
     "ros2-tf2",
     "ros2-urdf",
-    "ros2-bag-files"
+    "ros2-bag-files",
+    "ros2-qos",
+    "ros2-component-nodes"
   ],
   "last_discovery": null,
   "last_audit": null,
-  "last_written": "2026-07-08T10:01:35.925460+05:30"
+  "last_written": "2026-07-25T10:01:58.606777+05:30"
 }
