@@ -1,19 +1,7 @@
 {
   "created": "2026-05-23T13:47:19.804778+05:30",
-  "articles_written": 13,
+  "articles_written": 15,
   "queue": [
-    {
-      "topic": "ROS2 Executors \u2014 Single, Multi-threaded, Static",
-      "category": "ros2",
-      "slug": "ros2-executors",
-      "priority": 2
-    },
-    {
-      "topic": "ROS2 DDS \u2014 The Communication Layer",
-      "category": "ros2",
-      "slug": "ros2-dds",
-      "priority": 2
-    },
     {
       "topic": "ROS2 rclpy vs rclcpp \u2014 Python vs C++",
       "category": "ros2",
@@ -475,6 +463,54 @@
       "category": "ai-robotics",
       "slug": "genesis-physics-engine-differentiable-neural-simulation-for-robot-learning",
       "priority": 2
+    },
+    {
+      "topic": "PX4 Autopilot with ROS2 \u2014 Aerial Robot Integration via micro-ROS and XRCE-DDS",
+      "category": "navigation",
+      "slug": "px4-autopilot-with-ros2-aerial-robot-integration-via-micro-ros-and-xrce-dds",
+      "priority": 2
+    },
+    {
+      "topic": "OPC-UA and MQTT Bridges for ROS2 \u2014 Industrial IT/OT Connectivity",
+      "category": "software",
+      "slug": "opc-ua-and-mqtt-bridges-for-ros2-industrial-it-ot-connectivity",
+      "priority": 2
+    },
+    {
+      "topic": "Async Hardware Interfaces in ros2_control \u2014 Non-Blocking Controllers and Read/Write Variants",
+      "category": "ros2",
+      "slug": "async-hardware-interfaces-in-ros2-control-non-blocking-controllers-and-read-write-variants",
+      "priority": 2
+    },
+    {
+      "topic": "Surgical and Medical Robotics with ROS2 \u2014 From Research to Clinical Deployment",
+      "category": "papers",
+      "slug": "surgical-and-medical-robotics-with-ros2-from-research-to-clinical-deployment",
+      "priority": 2
+    },
+    {
+      "topic": "MujocoROS2Control \u2014 MuJoCo Physics Engine as a ROS2 Simulation Backend",
+      "category": "software",
+      "slug": "mujocoros2control-mujoco-physics-engine-as-a-ros2-simulation-backend",
+      "priority": 2
+    },
+    {
+      "topic": "3D Diffusion Policy (DP3) \u2014 Visuomotor Control from Point Clouds",
+      "category": "ai-robotics",
+      "slug": "3d-diffusion-policy-dp3-visuomotor-control-from-point-clouds",
+      "priority": 2
+    },
+    {
+      "topic": "Flow Matching for Robot Policies \u2014 Faster, Straighter Trajectories for Manipulation",
+      "category": "ai-robotics",
+      "slug": "flow-matching-for-robot-policies-faster-straighter-trajectories-for-manipulation",
+      "priority": 2
+    },
+    {
+      "topic": "ROS2 Events Executor \u2014 Event-Driven Execution Beyond the Polling Model",
+      "category": "ros2",
+      "slug": "ros2-events-executor-event-driven-execution-beyond-the-polling-model",
+      "priority": 2
     }
   ],
   "done": [
@@ -568,6 +604,20 @@
       "slug": "ros2-component-nodes",
       "priority": 2,
       "written": "2026-07-25T10:01:58.606755+05:30"
+    },
+    {
+      "topic": "ROS2 Executors \u2014 Single, Multi-threaded, Static",
+      "category": "ros2",
+      "slug": "ros2-executors",
+      "priority": 2,
+      "written": "2026-08-31T10:02:45.377000+05:30"
+    },
+    {
+      "topic": "ROS2 DDS \u2014 The Communication Layer",
+      "category": "ros2",
+      "slug": "ros2-dds",
+      "priority": 2,
+      "written": "2026-09-01T10:02:15.066333+05:30"
     }
   ],
   "flagged": [
@@ -580,5 +630,5 @@
   ],
   "last_discovery": null,
   "last_audit": null,
-  "last_written": "2026-07-25T10:01:58.606777+05:30"
+  "last_written": "2026-09-01T10:02:15.066358+05:30"
 }

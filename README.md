@@ -17,7 +17,7 @@ A growing knowledge base on ROS2, robotics, and AI — notes, guides, and code e
 ## Progress
 
 <!-- PROGRESS -->
-Articles written: 13 | Queue: 71
+Articles written: 15 | Queue: 85
 <!-- /PROGRESS -->
 
 ---
@@ -31,6 +31,8 @@ Articles written: 13 | Queue: 71
 - [ROS2 Architecture Overview](./ros2/ros2-architecture-overview.md)
 - [ROS2 Bag Files — Recording and Playback](./ros2/ros2-bag-files.md)
 - [ROS2 Component Nodes — Composable Executors](./ros2/ros2-component-nodes.md)
+- [ROS2 DDS — The Communication Layer](./ros2/ros2-dds.md)
+- [ROS2 Executors — Single, Multi-threaded, Static](./ros2/ros2-executors.md)
 - [ROS2 Launch Files — Orchestrating Systems](./ros2/ros2-launch-files.md)
 - [ROS2 Lifecycle Nodes](./ros2/ros2-lifecycle-nodes.md)
 - [ROS2 Nodes — Creating and Managing](./ros2/ros2-nodes.md)
