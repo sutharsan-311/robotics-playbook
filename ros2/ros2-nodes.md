@@ -1,14 +1,12 @@
-# ROS2 Nodes — Executors, Callback Groups, and Spin Patterns
+# ROS2 Nodes — Lifecycle, Naming, Introspection, and Spin Patterns
 
-A node is the fundamental unit of computation in ROS 2: a named process that owns publishers, subscriptions, timers, services, and action servers, all driven by an **Executor**. This article covers what actually happens between `rclcpp::init` and `rclcpp::shutdown` — the executor model, callback scheduling, callback groups, thread assignment, and the spin patterns that determine correctness under load.
-
-For lifecycle node state machines and composable node containers, see the dedicated articles in this series.
+A node is the fundamental unit of computation in ROS 2: a named process that owns publishers, subscriptions, timers, services, and action servers, all driven by an Executor. This article covers what a practicing engineer needs to know about node construction, naming and remapping, NodeOptions, introspection CLI tools, and spin patterns. For a deep dive into executor selection, callback groups, and the EventsExecutor, see [ros2-executors.md](ros2-executors.md).
 
 ---
 
 ## Node fundamentals
 
-Every ROS 2 node has a **fully-qualified name** (FQN) of the form `/namespace/name`. The FQN is the identity the RMW layer uses — two nodes with the same FQN cause the earlier instance to be killed, silently, with no error on the newer one. In multi-robot systems always parameterize the node name.
+Every ROS 2 node has a **fully-qualified name** (FQN) of the form `/namespace/name`. The FQN is the identity the RMW layer uses for discovery and graph introspection. Two nodes sharing the same FQN cause the **earlier** instance to be killed silently — no warning is emitted by the node being started. In multi-robot systems always parameterize the node name at launch.
 
 ### rclpy — minimal node
 
@@ -16,6 +14,7 @@ Every ROS 2 node has a **fully-qualified name** (FQN) of the form `/namespace/na
 # Source: docs.ros.org/en/jazzy/Tutorials/Beginner-Client-Libraries/Writing-A-Simple-Py-Publisher-And-Subscriber.html
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import String
 
 
 class MinimalPublisher(Node):
@@ -27,7 +26,9 @@ class MinimalPublisher(Node):
         self.timer = self.create_timer(0.5, self.timer_callback)
 
     def timer_callback(self):
-        ...
+        msg = String()
+        msg.data = 'Hello World'
+        self.pub.publish(msg)
 
 
 def main():
@@ -55,17 +56,21 @@ options.use_global_arguments(true)
        .allow_undeclared_parameters(false)
        .automatically_declare_parameters_from_overrides(true);
 
-// For composable nodes: construction signature
+// Composable node construction signature — required for component containers
 MyNode::MyNode(const rclcpp::NodeOptions & options)
 : Node("my_node", options)
 {}
 ```
 
-`automatically_declare_parameters_from_overrides(true)` is the correct option when you load a YAML parameter file at launch and want all keys to appear as declared parameters without listing each one in the constructor. Without it, keys in the YAML that are not explicitly `declare_parameter`d are silently ignored.
+`automatically_declare_parameters_from_overrides(true)` is the correct option when loading a YAML parameter file at launch: all keys in the YAML appear as declared parameters without listing each one in the constructor. Without it, keys not explicitly `declare_parameter`d are silently ignored.
 
-### Remapping at launch time
+*(Source: [Class NodeOptions — rclcpp Jazzy API](https://docs.ros.org/en/jazzy/p/rclcpp/generated/classrclcpp_1_1NodeOptions.html))*
 
-Node names and namespaces are the most common things remapped in multi-robot deployments:
+---
+
+## Remapping at launch time
+
+Node names, namespaces, and topics are the most common things remapped in multi-robot deployments:
 
 ```bash
 # CLI: remap node name and a topic in the same invocation
@@ -89,84 +94,52 @@ Node(
 
 `-r __node:=` and `-r __ns:=` are ROS 2 magic remapping arguments — they change the node's FQN before the node constructor runs. Topic remappings follow the same `source:=target` format.
 
+> **Multi-robot tip:** combine `namespace=` and a robot ID parameter so the same launch file brings up an entire fleet with one `OpaqueFunction` loop. The namespace scopes every topic, service, and action the node owns without touching the node's source code.
+
+*(Source: [About ROS 2 remapping — design.ros2.org](https://design.ros2.org/articles/ros_command_line_arguments.html))*
+
 ---
 
-## Executor types
+## Executor types — quick reference
 
-The Executor is the thread model that dispatches callbacks. `rclpy.spin()` and `rclcpp::spin()` are shorthand for a `SingleThreadedExecutor`. Four executor types are available in rclcpp on Jazzy:
+The Executor is the thread model that dispatches callbacks. For full coverage of each type, pitfalls, and real benchmarks, see [ros2-executors.md](ros2-executors.md). Quick reference:
 
-| Executor | Threading | When to use |
+| Executor | Threading | Jazzy / Rolling status |
 |---|---|---|
-| `SingleThreadedExecutor` | 1 thread | Simple nodes; no blocking callbacks |
-| `MultiThreadedExecutor` | N threads (default: hardware_concurrency) | Parallel callbacks; nodes with blocking calls isolated to their own callback group |
-| `StaticSingleThreadedExecutor` | 1 thread, static callback table | Lower overhead in real-time contexts; all entities must be created before `spin()` |
-| `EventsExecutor` *(experimental)* | Event-driven, configurable threads | Lowest latency; callbacks invoked immediately on DDS/timer event, not on the next spin cycle |
+| `SingleThreadedExecutor` | 1 thread | ✅ Stable |
+| `MultiThreadedExecutor` | N threads | ✅ Stable |
+| `StaticSingleThreadedExecutor` | 1 thread, static callback table | ⚠️ **Deprecated in Jazzy, removed in Rolling** |
+| `EventsExecutor` *(experimental)* | Event-driven | `rclcpp::experimental::executors` — Jazzy+ |
 
-### StaticSingleThreadedExecutor — real-time use
+> **`StaticSingleThreadedExecutor` — migration required.** This executor was deprecated in Jazzy when its optimisations were upstreamed into the standard executors, and it has been removed entirely in Rolling. Any Humble codebase using `StaticSingleThreadedExecutor` should migrate to `SingleThreadedExecutor`. The standard executor performs comparably on fixed node graphs and does not require all entities to be created before `spin()`. ([About Executors — ROS 2 Jazzy docs](https://docs.ros.org/en/jazzy/Concepts/Intermediate/About-Executors.html))
 
-The standard `SingleThreadedExecutor` rebuilds its executable list every spin cycle (O(n) in entity count). `StaticSingleThreadedExecutor` builds the list once at startup and does not modify it — this eliminates the per-cycle allocation and is the correct choice for a real-time control loop node where deterministic overhead matters more than dynamic entity creation.
-
-**Constraint:** all publishers, subscriptions, timers, and services must be created before the executor starts spinning. Any entity created after `spin()` begins will not be scheduled.
+**For real-time control** in Jazzy, the correct pattern is `SingleThreadedExecutor` with `SCHED_FIFO` thread pinning via `pthread_setschedparam` or the `realtime_tools` package — not `StaticSingleThreadedExecutor`. Alternatively, `EventsExecutor` eliminates the polling model entirely and shows 75% lower idle CPU and latency, but is still under `experimental::executors` and should be validated against your specific workload.
 
 ```cpp
-// Source: docs.ros.org/en/jazzy/Concepts/Intermediate/About-Executors.html
+// Real-time: pin the executor thread to SCHED_FIFO after construction
 #include "rclcpp/rclcpp.hpp"
+#include <pthread.h>
 
 int main(int argc, char ** argv) {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<MyControlNode>();
 
-    rclcpp::executors::StaticSingleThreadedExecutor executor;
+    rclcpp::executors::SingleThreadedExecutor executor;
     executor.add_node(node);
 
-    // Pin this thread to a real-time SCHED_FIFO policy before spinning
-    // (use pthread_setschedparam or a wrapper like realtime_tools)
-    executor.spin();
+    // Pin to SCHED_FIFO priority 80 before spinning — do NOT call this from inside spin()
+    sched_param sch;
+    sch.sched_priority = 80;
+    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch) != 0) {
+        RCLCPP_WARN(node->get_logger(), "Failed to set SCHED_FIFO — run as root or set RLIMIT_RTPRIO");
+    }
 
+    executor.spin();
     rclcpp::shutdown();
 }
 ```
 
-### EventsExecutor — lowest latency (experimental)
-
-`EventsExecutor` replaces the polling model with an event queue: instead of iterating all ready entities on every spin cycle, callbacks are enqueued the moment the underlying DDS or timer fires and are dispatched immediately.
-
-```cpp
-// Source: docs.ros.org/en/jazzy/p/rclcpp/generated/classrclcpp_1_1experimental_1_1executors_1_1EventsExecutor.html
-#include "rclcpp/experimental/executors/events_executor/events_executor.hpp"
-
-int main(int argc, char ** argv) {
-    rclcpp::init(argc, argv);
-    auto node = std::make_shared<MyNode>();
-
-    rclcpp::experimental::executors::EventsExecutor executor;
-    executor.add_node(node);
-    executor.spin();
-
-    rclcpp::shutdown();
-}
-```
-
-**Known issue (Jazzy):** `EventsExecutor` can miss timer callbacks after a timer is reset (cancelled and recreated) at high frequency — a pattern used in action server preemption and watchdog resets. Track [rclcpp#2889](https://github.com/ros2/rclcpp/issues/2889) before using in production; validate against your specific workload.
-
-### MultiThreadedExecutor — thread count
-
-```cpp
-// Explicit thread count: 4 threads
-rclcpp::executors::MultiThreadedExecutor executor(
-    rclcpp::executor::ExecutorArgs(), 4);
-executor.add_node(node);
-executor.spin();
-```
-
-```python
-from rclpy.executors import MultiThreadedExecutor
-executor = MultiThreadedExecutor(num_threads=4)
-executor.add_node(node)
-executor.spin()
-```
-
-Without the explicit count, both rclpy and rclcpp default to `std::thread::hardware_concurrency()`. On an 8-core machine that's 8 threads — fine for throughput, but all threads compete for CPU which defeats the purpose of isolation. Explicit counts give predictable scheduling.
+*(Source: [About Executors — ROS 2 Jazzy docs](https://docs.ros.org/en/jazzy/Concepts/Intermediate/About-Executors.html); [realtime_tools — ros-controls/realtime_tools](https://github.com/ros-controls/realtime_tools))*
 
 ---
 
@@ -176,8 +149,8 @@ Without the explicit count, both rclpy and rclcpp default to `std::thread::hardw
 
 ```python
 # In an event loop or GUI thread — process all ready callbacks, then return
-rclpy.spin_some(node)          # rclpy
-executor.spin_some()           # MultiThreadedExecutor
+rclpy.spin_some(node)          # rclpy free function
+executor.spin_some()           # preferred when node is attached to an executor
 ```
 
 ```cpp
@@ -188,7 +161,7 @@ executor.spin_some();
 executor.spin_some(std::chrono::milliseconds(10));
 ```
 
-Use `spin_some` when the spin loop is external (a game engine, a Qt event loop, a test harness). Call it on every iteration of the external loop. Never use `spin_some` in production code as a substitute for `spin` — it does not block waiting for new work and will burn 100% CPU in a tight loop.
+Use `spin_some` when the spin loop is external (a game engine, a Qt event loop, a test harness). Call it on every iteration of the external loop. **Never** use `spin_some` as a substitute for `spin` in a standalone node — it does not block waiting for new work and will burn 100% CPU in a tight loop.
 
 ### `spin_until_future_complete` — async service calls
 
@@ -211,20 +184,20 @@ if (rclcpp::spin_until_future_complete(node, future) ==
 }
 ```
 
-**Critical:** never call `spin_until_future_complete` from inside a callback on a `SingleThreadedExecutor`. The executor is already spinning and the second call will either deadlock or throw. On a `MultiThreadedExecutor`, call it only from a callback that is in its own `MutuallyExclusiveCallbackGroup` — so its thread is not blocking the pool.
+**Critical:** never call `spin_until_future_complete` from inside a callback on a `SingleThreadedExecutor`. The executor is already spinning; the nested call deadlocks immediately. On a `MultiThreadedExecutor`, call it only from a callback in its own `MutuallyExclusiveCallbackGroup`.
 
 ---
 
-## Callback groups
+## Callback groups — essential pattern
 
-A callback group controls which callbacks the executor is allowed to execute **concurrently**. On a `SingleThreadedExecutor` all callbacks serialize regardless of group; on a `MultiThreadedExecutor` the groups determine which callbacks can overlap.
+A callback group controls which callbacks the executor is allowed to execute concurrently. On a `SingleThreadedExecutor` all callbacks serialize regardless of group; on a `MultiThreadedExecutor` the groups determine which callbacks can overlap.
 
 | Group type | Within the group | Across different groups |
 |---|---|---|
 | `MutuallyExclusiveCallbackGroup` | Serialized (at most one active at a time) | Can run concurrently |
 | `ReentrantCallbackGroup` | Can overlap freely | Can run concurrently |
 
-Every node has a **default callback group** (MutuallyExclusive) that is used when you don't specify one. Adding a second MutuallyExclusive group is the standard pattern for isolating a slow callback from a fast one.
+> **Critical default:** every node uses `MutuallyExclusiveCallbackGroup` for all entities it owns. A `MultiThreadedExecutor` with all callbacks in the default group is functionally identical to `SingleThreadedExecutor`.
 
 ### rclpy — two isolated groups
 
@@ -246,7 +219,8 @@ class SensorControlNode(Node):
         cb_group_sensor = MutuallyExclusiveCallbackGroup()
         cb_group_control = MutuallyExclusiveCallbackGroup()
 
-        # Store groups as members — if they go out of scope, callbacks are silently dropped
+        # IMPORTANT: store groups as members — if they go out of scope,
+        # callbacks are silently dropped with no error
         self._cb_groups = (cb_group_sensor, cb_group_control)
 
         self.sub = self.create_subscription(
@@ -268,99 +242,13 @@ def main():
     executor.spin()
 ```
 
-### rclcpp — two isolated groups
-
-```cpp
-// Source: docs.ros.org/en/jazzy/How-To-Guides/Using-callback-groups.html
-#include "rclcpp/rclcpp.hpp"
-#include "sensor_msgs/msg/laser_scan.hpp"
-
-class SensorControlNode : public rclcpp::Node {
-public:
-    SensorControlNode() : Node("sensor_control_node") {
-        // true = auto-add to node's default executor (the default)
-        cb_group_sensor_ = create_callback_group(
-            rclcpp::CallbackGroupType::MutuallyExclusive);
-        cb_group_control_ = create_callback_group(
-            rclcpp::CallbackGroupType::MutuallyExclusive);
-
-        rclcpp::SubscriptionOptions sub_opts;
-        sub_opts.callback_group = cb_group_sensor_;
-
-        sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
-            "/scan", 10,
-            [this](sensor_msgs::msg::LaserScan::ConstSharedPtr msg) { sensorCb(msg); },
-            sub_opts);
-
-        timer_ = create_wall_timer(
-            std::chrono::milliseconds(50),
-            [this]() { controlCb(); },
-            cb_group_control_);
-    }
-
-private:
-    void sensorCb(sensor_msgs::msg::LaserScan::ConstSharedPtr) { /* heavy work */ }
-    void controlCb() { /* 20 Hz control output */ }
-
-    rclcpp::CallbackGroup::SharedPtr cb_group_sensor_;
-    rclcpp::CallbackGroup::SharedPtr cb_group_control_;
-    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_;
-    rclcpp::TimerBase::SharedPtr timer_;
-};
-
-int main(int argc, char ** argv) {
-    rclcpp::init(argc, argv);
-    auto node = std::make_shared<SensorControlNode>();
-    rclcpp::executors::MultiThreadedExecutor executor;
-    executor.add_node(node);
-    executor.spin();
-    rclcpp::shutdown();
-}
-```
-
-**`MutuallyExclusiveCallbackGroup`** — within the group, at most one callback runs at a time (shared state is safe). Different groups can overlap on a `MultiThreadedExecutor`.
-
-**`ReentrantCallbackGroup`** — multiple invocations of the same callback can run simultaneously. The callback must be thread-safe. Use this for stateless data-transform callbacks, not for callbacks that modify class members.
-
-### Pinning a callback group to a dedicated executor thread
-
-`executor.add_callback_group()` distributes individual callback groups across separate executor instances. This is the pattern for assigning a latency-sensitive callback (e.g. IMU processing) to a real-time thread while keeping everything else on a standard thread:
-
-```cpp
-// Source: docs.ros.org/en/jazzy/How-To-Guides/Using-callback-groups.html
-auto rt_group = node->create_callback_group(
-    rclcpp::CallbackGroupType::MutuallyExclusive,
-    false);   // false = don't auto-add to the node's default executor
-
-rclcpp::SubscriptionOptions opts;
-opts.callback_group = rt_group;
-auto imu_sub = node->create_subscription<sensor_msgs::msg::Imu>(
-    "/imu/data", 10, imu_callback, opts);
-
-// Main executor — owns the node and everything else
-rclcpp::executors::SingleThreadedExecutor main_exec;
-main_exec.add_node(node);
-
-// Dedicated RT executor — owns only the IMU callback group
-rclcpp::executors::StaticSingleThreadedExecutor rt_exec;
-rt_exec.add_callback_group(rt_group, node->get_node_base_interface());
-
-// Spin the RT executor on a dedicated thread; set SCHED_FIFO on that thread
-std::thread rt_thread([&rt_exec]() {
-    rt_exec.spin();
-});
-
-main_exec.spin();  // blocks on main thread
-rt_thread.join();
-```
-
-The `false` argument to `create_callback_group` prevents the group from being auto-registered with the node's default executor. Without it, the callback would be scheduled by **both** executors — double-dispatched, potentially calling the callback concurrently with itself.
+For full C++ callback group examples, the `add_callback_group` API for dedicating a group to a separate real-time executor, and all callback group pitfalls, see [ros2-executors.md](ros2-executors.md).
 
 ---
 
 ## Multiple nodes in one executor
 
-An executor can host multiple node instances. This is lighter-weight than component containers for Python pipelines or C++ nodes that don't need zero-copy IPC:
+An executor can host multiple node instances — lightweight for Python pipelines or C++ nodes that don't need zero-copy IPC:
 
 ```python
 # Source: ros2/examples — rclpy/executors/examples_rclpy_executors/composed.py (Apache 2.0)
@@ -379,47 +267,113 @@ node2.destroy_node()
 rclpy.shutdown()
 ```
 
-Both nodes share the executor's thread pool. Their callbacks are interleaved according to callback group rules. Each node still has its own separate FQN, parameters, and topic namespace.
+```cpp
+rclcpp::executors::MultiThreadedExecutor executor(
+    rclcpp::ExecutorOptions(), 4);   // 4 threads
+executor.add_node(node_a);
+executor.add_node(node_b);
+executor.spin();
+```
+
+Both nodes share the executor's thread pool. Each node has its own FQN, parameters, and topic namespace. Callbacks from different nodes interleave freely — node boundaries imply no thread safety; protect any shared state with a mutex.
+
+---
+
+## Node introspection — CLI tools
+
+These commands are the first line of diagnosis for missing topics, crashed nodes, and broken service connections:
+
+```bash
+# List all live nodes in the ROS graph
+ros2 node list
+# /my_robot/base_controller
+# /my_robot/lidar_driver
+# /rviz2
+
+# Full node info: publishers, subscriptions, services, action servers, parameters
+ros2 node info /my_robot/base_controller
+# /my_robot/base_controller
+#   Subscribers:
+#     /cmd_vel: geometry_msgs/msg/Twist
+#   Publishers:
+#     /odom: nav_msgs/msg/Odometry
+#   Service Servers:
+#     /my_robot/base_controller/describe_parameters: rcl_interfaces/srv/DescribeParameters
+#   Action Servers:
+#     (none)
+
+# Verify a specific node's parameter values at runtime
+ros2 param get /my_robot/base_controller wheel_separation
+# Double value is: 0.3
+
+# Dump all parameters as YAML (useful for generating launch configs from a live system)
+ros2 param dump /my_robot/base_controller
+
+# Kill a specific node cleanly (sends SIGINT, triggers rclcpp shutdown hooks)
+ros2 lifecycle set /my_robot/base_controller shutdown  # for lifecycle nodes
+kill -SIGINT $(ros2 node list | head -1 | xargs -I{} ros2 node info {} | grep PID)
+
+# List nodes and their process IDs (requires ros2_tracing or --all flag on Jazzy)
+ros2 node list --all
+```
+
+`ros2 node info` is the first command to run when a subscription or service is silently receiving nothing — it shows whether the node has the expected publisher/subscriber at all, independent of QoS or network issues.
+
+### Programmatic node info — rclcpp
+
+```cpp
+// Enumerate all nodes visible in the ROS graph from inside a node
+auto node_names = node->get_node_names();            // std::vector<std::string>
+auto topic_names = node->get_topic_names_and_types(); // std::map<std::string, std::vector<std::string>>
+
+// Subscribe to node graph change events — fires when any node appears or disappears
+auto graph_event = node->get_graph_event();
+node->wait_for_graph_change(graph_event, std::chrono::seconds(5));
+if (graph_event->check()) {
+    RCLCPP_INFO(node->get_logger(), "Graph changed — re-querying node list");
+}
+```
+
+*(Source: [rclcpp NodeGraph interface — Jazzy API](https://docs.ros.org/en/jazzy/p/rclcpp/generated/classrclcpp_1_1Node.html))*
 
 ---
 
 ## Common pitfalls
 
 **1. Blocking inside a callback on a `SingleThreadedExecutor`.**
-Any `sleep`, synchronous service call via `call()`, or `spin_until_future_complete()` from inside a callback on the same single-threaded executor starves the executor — the executor is blocked inside your callback and cannot service any other callback, including the service response that your callback is waiting for. The result is a deadlock that hangs the node. Switch to `MultiThreadedExecutor` with a dedicated `MutuallyExclusiveCallbackGroup` for the blocking callback, or restructure using `async_send_request` with a future callback.
+Any `sleep`, synchronous service call via `call()`, or `spin_until_future_complete()` from inside a callback on the same single-threaded executor starves the executor — it is blocked inside your callback and cannot service any other callback, including the service response your callback is waiting for. The result is a deadlock. Switch to `MultiThreadedExecutor` with a dedicated `MutuallyExclusiveCallbackGroup` for the blocking callback, or restructure using `async_send_request` with a future callback.
 
 **2. Letting callback group `shared_ptr` go out of scope.**
 `create_callback_group()` returns a `shared_ptr`. If you don't store it as a member variable (`self._cb_group` in Python, `cb_group_` in C++), the group destructs when the constructor returns and the executor silently stops scheduling those callbacks — no error, no warning. Every callback group must be stored for the lifetime of the node.
 
-**3. Creating entities after `StaticSingleThreadedExecutor` starts spinning.**
-The static executor builds its entity table once. Any publisher, subscription, timer, or service created after `spin()` is called is invisible to the executor and will never be scheduled. Create all entities in the node constructor before handing the node to the executor.
+**3. `StaticSingleThreadedExecutor` in Jazzy or Rolling.**
+This executor is **deprecated in Jazzy and removed in Rolling**. Code that uses it on Rolling won't compile. Migrate to `SingleThreadedExecutor`. For real-time use, add `SCHED_FIFO` thread pinning to a standard executor instead — the optimisations that motivated `StaticSingleThreadedExecutor` were upstreamed.
 
-**4. Calling `rclcpp::spin()` and an executor's `spin()` on the same node.**
-`rclcpp::spin(node)` creates a `SingleThreadedExecutor` internally. If you also call `executor.add_node(node)` and `executor.spin()`, two executors compete to service the same node. The result is race conditions in callback dispatch and potential double-invocations. A node must be added to exactly one executor.
+**4. FQN collision in multi-robot launch.**
+Two nodes with the same `/namespace/name` cause the older instance to be killed by the RMW layer with no warning on either side. In fleet deployments, always parameterize node names via launch argument and pass `-r __node:=<unique>` or use the `name=` / `namespace=` fields in the `Node` launch action.
 
-**5. FQN collision in multi-robot launch.**
-Two nodes with the same `/namespace/name` cause the older instance to be killed by the RMW layer with no warning to the new one. In fleet deployments, always parameterize node names via launch argument and pass `-r __node:=<unique>` or use the `name=` / `namespace=` fields in the `Node` launch action.
+**5. Calling `rclcpp::spin()` and an executor's `spin()` on the same node.**
+`rclcpp::spin(node)` creates a `SingleThreadedExecutor` internally. If you also call `executor.add_node(node)` and `executor.spin()`, two executors compete to service the same node — race conditions in callback dispatch and potential double-invocations. A node must be added to exactly one executor.
 
-**6. `EventsExecutor` with dynamic timer resets.**
-A confirmed bug ([rclcpp#2889](https://github.com/ros2/rclcpp/issues/2889)) causes `EventsExecutor` to miss timer callbacks when a timer is reset (cancelled and re-created) at high frequency — a pattern used in action server preemption and watchdog resets. Do not use `EventsExecutor` in nodes that reset timers unless you have explicitly validated against this bug in your ROS 2 version.
+**6. Calling `rclpy.spin_once(node)` on a node already attached to an executor.**
+The free function `rclpy.spin_once(node)` removes and re-attaches the node internally, breaking its connection to any executor it is already part of. Call `executor.spin_once()` on the executor object instead. ([rclpy issue #1445](https://github.com/ros2/rclpy/issues/1445))
 
-**7. `add_callback_group` without `false` in the constructor call.**
-When you use `executor.add_callback_group(group, node_base)` to assign a group to a dedicated executor, you must pass `false` as the `automatically_add_to_executor` argument when calling `create_callback_group`. Otherwise the group is auto-registered with the node's default executor **and** added to the dedicated one — two executors compete to dispatch the same callbacks.
+**7. `automatically_declare_parameters_from_overrides` not set when loading YAML.**
+Parameters in a YAML file loaded via `--params-file` or `ros__parameters:` in a launch file are only visible if the node has declared them — either explicitly via `declare_parameter()` or automatically via `automatically_declare_parameters_from_overrides(true)` in `NodeOptions`. Without it, YAML keys are silently ignored. This causes `get_parameter()` to throw `ParameterNotDeclaredException` at runtime even though the YAML was correctly specified.
 
 ---
 
 ## Further reading
 
-- [About Executors — ROS 2 Jazzy docs](https://docs.ros.org/en/jazzy/Concepts/Intermediate/About-Executors.html) — polling model, callback table, `StaticSingleThreadedExecutor`, real-time considerations
-- [Using Callback Groups — ROS 2 Jazzy docs](https://docs.ros.org/en/jazzy/How-To-Guides/Using-callback-groups.html) — complete rclpy and rclcpp examples with concurrency rules and `add_callback_group`
-- [Class EventsExecutor — rclcpp Jazzy API](https://docs.ros.org/en/jazzy/p/rclcpp/generated/classrclcpp_1_1experimental_1_1executors_1_1EventsExecutor.html) — event-driven executor API reference; still experimental in Jazzy
+- [About Executors — ROS 2 Jazzy docs](https://docs.ros.org/en/jazzy/Concepts/Intermediate/About-Executors.html) — polling model, callback table, `StaticSingleThreadedExecutor` deprecation notice, real-time considerations
+- [Using Callback Groups — ROS 2 Jazzy docs](https://docs.ros.org/en/jazzy/How-To-Guides/Using-callback-groups.html) — complete rclpy and rclcpp examples with concurrency rules and `add_callback_group` for dedicated RT threads
 - [Class NodeOptions — rclcpp Jazzy API](https://docs.ros.org/en/jazzy/p/rclcpp/generated/classrclcpp_1_1NodeOptions.html) — full option list: use_global_arguments, allow_undeclared_parameters, automatically_declare_parameters_from_overrides, and more
+- [About ROS 2 remapping — design.ros2.org](https://design.ros2.org/articles/ros_command_line_arguments.html) — full remapping grammar: `__node`, `__ns`, topic/service/parameter remaps
 - [ros2/examples — rclpy executors (GitHub)](https://github.com/ros2/examples/tree/rolling/rclpy/executors) — callback group and multi-node executor patterns used in this article
+- [realtime_tools — ros-controls/realtime_tools (GitHub)](https://github.com/ros-controls/realtime_tools) — `RealtimePublisher`, `RealtimeClock`, and thread priority helpers for ROS 2 real-time control
 - [Deadlocks in rclpy and how to prevent them — Karelics](https://karelics.fi/deadlocks-in-rclpy/) — detailed walkthrough of every deadlock pattern in single- and multi-threaded executors
-- [The Evolution of Execution Management in rclcpp — Polymath Robotics](https://www.polymathrobotics.com/blog/execution-management-in-rclcpp) — deep dive into why the polling model was replaced and what EventsExecutor changes
-- [ROS 2 Nodes — Lifecycle variant](ros2-lifecycle-nodes.md) — state machine, transition callbacks, configure/activate/deactivate/cleanup
-- [ROS 2 Component Nodes](ros2-component-nodes.md) — composable executors, intra-process comms, zero-copy IPC
+- [ros2-executors.md](ros2-executors.md) — deep dive into executor selection, EventsExecutor benchmarks, spin method reference, and all callback group pitfalls
 
 ---
 
-*2026-08-29 | ROS2 version: Jazzy / Humble*
+*2026-10-17 | ROS2 version: Jazzy / Humble (StaticSingleThreadedExecutor removed in Rolling)*
