@@ -24,6 +24,8 @@ ROS 2 ships several predefined profiles for the most common patterns:
 - **Services** — `KEEP_LAST(10)`, `RELIABLE`, `VOLATILE`
 - **Parameters** — `KEEP_LAST(1000)`, `RELIABLE`, `VOLATILE`
 
+*(Source: [REP-2003 — Recommended QoS settings for standard topics](https://ros.org/reps/rep-2003.html))*
+
 ---
 
 ## Compatibility — "Request vs Offered"
@@ -128,36 +130,61 @@ subscription = node.create_subscription(String, 'my_topic', callback, qos_profil
 
 ### rclcpp — Deadline with event callbacks
 
-Adapted from [`quality_of_service_demo/rclcpp/src/deadline.cpp`](https://github.com/ros2/demos/blob/jazzy/quality_of_service_demo/rclcpp/src/deadline.cpp) (Apache 2.0, ros2/demos):
+The idiomatic rclcpp pattern wires event callbacks into `PublisherOptions` / `SubscriptionOptions` **at creation time** inside the node constructor — the deadline event callback lambda fires whenever the publisher misses the deadline, or the subscriber does not receive within the deadline:
 
 ```cpp
+// Source: pattern from quality_of_service_demo/rclcpp (ros2/demos, Apache 2.0)
+// https://github.com/ros2/demos/blob/jazzy/quality_of_service_demo/rclcpp/src/deadline.cpp
 #include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/string.hpp"
 #include <chrono>
 using namespace std::chrono_literals;
 
-rclcpp::QoS qos_profile(10);
-qos_profile.deadline(500ms);   // 500 ms deadline
+class DeadlineNode : public rclcpp::Node
+{
+public:
+  DeadlineNode() : Node("deadline_node")
+  {
+    rclcpp::QoS qos(10);
+    qos.deadline(500ms);   // Publisher must fire at ≥ 2 Hz
 
-// Publisher-side: fired when the publisher missed its own deadline
-auto talker = std::make_shared<MyTalkerNode>(qos_profile, "my_topic");
-talker->get_options().event_callbacks.deadline_callback =
-    [node = talker.get()](rclcpp::QOSDeadlineOfferedInfo & event) -> void {
-        RCLCPP_WARN(node->get_logger(),
-            "Offered deadline missed - total %d delta %d",
-            event.total_count, event.total_count_change);
-    };
+    // --- Publisher side ---
+    rclcpp::PublisherOptions pub_options;
+    pub_options.event_callbacks.deadline_callback =
+      [this](rclcpp::QOSDeadlineOfferedInfo & event) {
+        RCLCPP_WARN(get_logger(),
+          "Offered deadline missed - total %d delta %d",
+          event.total_count, event.total_count_change);
+      };
+    pub_ = create_publisher<std_msgs::msg::String>("my_topic", qos, pub_options);
 
-// Subscription-side: fired when no message arrived within the deadline
-auto listener = std::make_shared<MyListenerNode>(qos_profile, "my_topic");
-listener->get_options().event_callbacks.deadline_callback =
-    [node = listener.get()](rclcpp::QOSDeadlineRequestedInfo & event) -> void {
-        RCLCPP_WARN(node->get_logger(),
-            "Requested deadline missed - total %d delta %d",
-            event.total_count, event.total_count_change);
-    };
+    // --- Subscription side ---
+    rclcpp::SubscriptionOptions sub_options;
+    sub_options.event_callbacks.deadline_callback =
+      [this](rclcpp::QOSDeadlineRequestedInfo & event) {
+        RCLCPP_WARN(get_logger(),
+          "Requested deadline missed - total %d delta %d",
+          event.total_count, event.total_count_change);
+      };
+    sub_ = create_subscription<std_msgs::msg::String>(
+      "my_topic", qos,
+      [this](std_msgs::msg::String::ConstSharedPtr msg) {
+        RCLCPP_INFO(get_logger(), "Received: %s", msg->data.c_str());
+      },
+      sub_options);
 
-talker->initialize();
-listener->initialize();
+    timer_ = create_wall_timer(500ms, [this]() {
+      auto msg = std_msgs::msg::String();
+      msg.data = "ping";
+      pub_->publish(msg);
+    });
+  }
+
+private:
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr sub_;
+  rclcpp::TimerBase::SharedPtr timer_;
+};
 ```
 
 **Practical use:** set a deadline tighter than your control loop period on `/cmd_vel` or `/joint_states`. The deadline callback becomes your watchdog — if the publisher stalls (computation overrun, crashed node, dropped network packet), the subscription knows immediately without polling.
@@ -256,25 +283,56 @@ If `assert_liveliness()` is not called within the lease duration, the subscripti
 
 ### rclcpp — Liveliness
 
-Adapted from [`quality_of_service_demo/rclcpp/src/liveliness.cpp`](https://github.com/ros2/demos/blob/jazzy/quality_of_service_demo/rclcpp/src/liveliness.cpp) (Apache 2.0, ros2/demos):
+The idiomatic rclcpp pattern wires the liveliness event callback into `SubscriptionOptions` at `create_subscription` time. For `MANUAL_BY_TOPIC`, call `publisher->assert_liveliness()` on a periodic timer:
 
 ```cpp
+// Source: pattern from quality_of_service_demo/rclcpp/src/liveliness.cpp (ros2/demos, Apache 2.0)
+// https://github.com/ros2/demos/blob/jazzy/quality_of_service_demo/rclcpp/src/liveliness.cpp
 #include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/string.hpp"
 #include <chrono>
 using namespace std::chrono_literals;
 
-rclcpp::QoS qos_profile(10);
-qos_profile
-    .liveliness(RMW_QOS_POLICY_LIVELINESS_AUTOMATIC)
-    .liveliness_lease_duration(1000ms);
+class LivelinessNode : public rclcpp::Node
+{
+public:
+  LivelinessNode() : Node("liveliness_node")
+  {
+    rclcpp::QoS qos(10);
+    qos.liveliness(RMW_QOS_POLICY_LIVELINESS_AUTOMATIC)
+       .liveliness_lease_duration(1000ms);
 
-auto listener = std::make_shared<MyListenerNode>(qos_profile, "my_topic");
-listener->get_options().event_callbacks.liveliness_callback =
-    [listener](rclcpp::QOSLivelinessChangedInfo & event) {
-        RCLCPP_INFO(listener->get_logger(), "Liveliness changed event:");
-        RCLCPP_INFO(listener->get_logger(), "  alive_count: %d", event.alive_count);
-        RCLCPP_INFO(listener->get_logger(), "  not_alive_count: %d", event.not_alive_count);
-    };
+    // --- Subscription side: fired when publisher count changes ---
+    rclcpp::SubscriptionOptions sub_options;
+    sub_options.event_callbacks.liveliness_callback =
+      [this](rclcpp::QOSLivelinessChangedInfo & event) {
+        RCLCPP_INFO(get_logger(), "Liveliness changed: alive=%d not_alive=%d",
+          event.alive_count, event.not_alive_count);
+      };
+    sub_ = create_subscription<std_msgs::msg::String>(
+      "my_topic", qos,
+      [this](std_msgs::msg::String::ConstSharedPtr msg) {
+        RCLCPP_INFO(get_logger(), "Received: %s", msg->data.c_str());
+      },
+      sub_options);
+
+    // --- Publisher side: MANUAL_BY_TOPIC variant ---
+    rclcpp::QoS manual_qos(10);
+    manual_qos.liveliness(RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC)
+              .liveliness_lease_duration(1000ms);
+    pub_ = create_publisher<std_msgs::msg::String>("my_topic", manual_qos);
+
+    // Assert liveliness at half the lease duration — runs even when not publishing
+    assert_timer_ = create_wall_timer(500ms, [this]() {
+      pub_->assert_liveliness();
+    });
+  }
+
+private:
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr sub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_;
+  rclcpp::TimerBase::SharedPtr assert_timer_;
+};
 ```
 
 ---
@@ -322,7 +380,7 @@ ros2 topic info /your_topic --verbose
 # Check for IncompatibleQoS events (printed by the RMW layer when a connection is refused)
 ros2 topic info /your_topic --verbose | grep -A2 "Incompatible"
 
-# Show what QoS is currently offered/requested on a Jazzy system
+# Force a BEST_EFFORT subscription to see what a BEST_EFFORT publisher is sending
 ros2 topic echo --qos-reliability best_effort /your_topic
 ```
 
@@ -345,6 +403,9 @@ Setting a deadline on only the publisher or only the subscription does not produ
 **5. Lifespan without `TRANSIENT_LOCAL` has no observable effect.**
 The lifespan policy governs the age of messages sitting in the publisher's late-joiner cache. If the publisher uses `VOLATILE` durability (the default), there is no cache — messages are delivered immediately or not at all, and the lifespan timer never has anything to expire. Lifespan is only meaningful with `TRANSIENT_LOCAL` + `RELIABLE`.
 
+**6. rclcpp event callbacks must be set in `PublisherOptions`/`SubscriptionOptions` before `create_publisher`/`create_subscription`.**
+Unlike the Python `event_callbacks` keyword argument, rclcpp wires deadline/liveliness callbacks through `rclcpp::PublisherOptions` and `rclcpp::SubscriptionOptions` passed at entity creation time. Setting `event_callbacks` on an already-constructed publisher or subscription has no effect — the middleware already registered the endpoint without an event handler.
+
 ---
 
 ## Further reading
@@ -358,4 +419,4 @@ The lifespan policy governs the age of messages sitting in the publisher's late-
 
 ---
 
-*2026-07-18 | ROS2 version: Jazzy / Humble*
+*2026-10-24 | ROS2 version: Jazzy / Humble*
